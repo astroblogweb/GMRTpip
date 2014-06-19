@@ -42,7 +42,7 @@ def extrModel(modelimg, region, compl=False):
         else:
             if os.path.exists(region+"_peel.model.tt"+str(i)):
                 os.system('rm -r '+region+"_peel.model.tt"+str(i))
-           immath(imagename = modelimgtt, mode = 'evalexpr', expr = 'IM0', \
+            immath(imagename = modelimgtt, mode = 'evalexpr', expr = 'IM0', \
             region = region, outfile = region+'_peel.model.tt'+str(i))
 
             blankedmodelimg.append(region+"_peel.model.tt"+str(i))
@@ -166,7 +166,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
     if os.path.exists(active_ms.replace('peel1','peel2')):
         os.system('rm -r '+active_ms.replace('peel1','peel2'))
     split(vis=active_ms, outputvis=active_ms.replace('peel1','peel2'))
-    active_ms = active_ms.replace('peel1'imgmodelimg_reg = extrModel(modelimg, region, compl=False)
+    active_ms = active_ms.replace('peel1','peel2')
 
     modelimg_reg = extrModel(modelimg, region, compl=False)
     ftw(active_ms, modelimg_reg, wprojplanes)
