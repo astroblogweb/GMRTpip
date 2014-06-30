@@ -161,8 +161,8 @@ def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
 
     modelimg_reg = extrModel(modelimg, region, compl=False)
     ftw(active_ms, modelimg=modelimg_reg, wprojplanes=512)
-    gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=10, calmode='p')
-    gaincal(vis=active_ms, caltable='cal/peel.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=10, calmode='a')
+    gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
+    gaincal(vis=active_ms, caltable='cal/peel.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
     applycal(vis=active_ms, gaintable=['cal/peel.Ga','cal/peel.Gp'], calwt=False, flagbackup=False)
 
     # DEBUG
@@ -180,8 +180,8 @@ def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
         mask=region)
 
     # selfcal
-    gaincal(vis=active_ms, caltable='cal/peel2.Gp', solint='10s', refant=refAnt, minsnr=0, minblperant=10, calmode='p')
-    gaincal(vis=active_ms, caltable='cal/peel2.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=10, calmode='a')
+    gaincal(vis=active_ms, caltable='cal/peel2.Gp', solint='10s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
+    gaincal(vis=active_ms, caltable='cal/peel2.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
     applycal(vis=active_ms, gaintable=['cal/peel2.Ga','cal/peel2.Gp'], calwt=False, flagbackup=False)
 
     # DEBUG
