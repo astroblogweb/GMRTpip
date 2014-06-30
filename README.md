@@ -1,4 +1,2 @@
 GMRTpip
 =======
-
-GMRT CASA pipeline

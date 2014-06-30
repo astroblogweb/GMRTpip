@@ -598,16 +598,16 @@ def step_finalclean(active_ms, sou):
 
 # steps to execute
 active_ms = dataf.replace('FITS', 'MS')  # NOTE: do not commment this out!
-#step_env()
-#step_import(active_ms)
+step_env()
+step_import(active_ms)
 freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not commment this out!
-#step_preflag(active_ms, freq, n_chan)
-#step_setjy(active_ms)
-#step_bandpass(active_ms, freq, minBL_for_cal)
-#step_calib(active_ms, freq, minBL_for_cal)
+step_preflag(active_ms, freq, n_chan)
+step_setjy(active_ms)
+step_bandpass(active_ms, freq, minBL_for_cal)
+step_calib(active_ms, freq, minBL_for_cal)
 step_selfcal(active_ms, freq, minBL_for_cal, sources)
 execfile('/home/hslxrsrv3/stsf309/phd/obs/GMRT/GMRT_peeling.py')
 for sou in sources:
     active_ms = step_peeling(sou)
-#    step_subtract(active_ms, sou)
-#    step_finalclean(active_ms, sou)
+    step_subtract(active_ms, sou)
+    step_finalclean(active_ms, sou)

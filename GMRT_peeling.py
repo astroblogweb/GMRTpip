@@ -19,31 +19,35 @@ import numpy as np
 
 def extrModel(modelimg, region, compl=False):
     """Extract only the part described by the region file
-    from a modelimg
+    from one or more (nterms>1) modelimg
     """
-    if compl:
-        # copy model
-        if os.path.exists(region+"_peel-compl.model"):
-            os.system('rm -r '+region+"_peel-compl.model")
-        syscommand = "cp -r "+modelimg+" "+region+"_peel-compl.model"
-        os.system(syscommand)
-        ia.open(region+"_peel-compl.model")
-        reg = rg.fromtextfile(filename=region, shape=ia.shape(), csys=ia.coordsys().torecord())
-        # set to 0 all the pixels in the region,
-        # so the rest of the field is untouched
-        ia.set(pixels='0', region=reg)
-        ia.close()
+    blankedmodelimg = []
 
-        return region+"_peel-compl.model"
+    for i, modelimgtt in enumerate(modelimg):
+        if compl:
+            # copy model
+            if os.path.exists(region+"_peel-compl.model.tt"+str(i)):
+                os.system('rm -r '+region+"_peel-compl.model.tt"+str(i))
+            syscommand = "cp -r "+modelimgtt+" "+region+"_peel-compl.model.tt"+str(i)
+            os.system(syscommand)
+            ia.open(region+"_peel-compl.model.tt"+str(i))
+            reg = rg.fromtextfile(filename=region, shape=ia.shape(), csys=ia.coordsys().torecord())
+            # set to 0 all the pixels in the region,
+            # so the rest of the field is untouched
+            ia.set(pixels='0', region=reg)
+            ia.close()
 
-    else:
-        if os.path.exists(region+"_peel.model"):
-            os.system('rm -r '+region+"_peel.model")
-        immath(imagename = modelimg, mode = 'evalexpr', expr = 'IM0', \
-        region = region, outfile = region+'_peel.model')
+            blankedmodelimg.append(region+"_peel-compl.model.tt"+str(i))
 
-        return region+'_peel.model'
+        else:
+            if os.path.exists(region+"_peel.model.tt"+str(i)):
+                os.system('rm -r '+region+"_peel.model.tt"+str(i))
+            immath(imagename = modelimgtt, mode = 'evalexpr', expr = 'IM0', \
+            region = region, outfile = region+'_peel.model.tt'+str(i))
 
+            blankedmodelimg.append(region+"_peel.model.tt"+str(i))
+
+    return blankedmodelimg
 
 def invertTable(caltab):
     """Invert a calibration table
@@ -122,13 +126,18 @@ def subtract(active_ms, modelimg, region='', wprojplanes=0):
     uvsub(vis=active_ms)
 
 
-def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
+def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, cleanenv=True):
     """General function to call in sequence all the steps
     active_ms: MS with calibrated data in DATA
-    modelimg: model of the whole sky
+    modelimg: model of the whole sky (single img or array for nterms>1)
     region: region where is the source to peel
     refAnt: is the reference antenna for the calibration step
+    rob: robust parameter
+    wprojplanes: number of w-projection planes
     """
+    # if modelimg is a single image (nterms=1), put in an array
+    if type(modelimg) is str: modelimg = [modelimg]
+
     # subtract all other sources
     print "Subtract all sources in the field..."
     if os.path.exists(active_ms+'-peel1'):
@@ -139,17 +148,17 @@ def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_initial', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_initial', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
     modelimg_reg_compl = extrModel(modelimg, region, compl=True)
-    subtract(active_ms, modelimg_reg_compl, wprojplanes=512)
+    subtract(active_ms, modelimg_reg_compl, wprojplanes)
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_uncalib_complsub', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_uncalib_complsub', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
     # peel
@@ -160,23 +169,29 @@ def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
     active_ms = active_ms.replace('peel1','peel2')
 
     modelimg_reg = extrModel(modelimg, region, compl=False)
+<<<<<<< HEAD
     ftw(active_ms, modelimg=modelimg_reg, wprojplanes=512)
     gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     gaincal(vis=active_ms, caltable='cal/peel.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
+=======
+    ftw(active_ms, modelimg_reg, wprojplanes)
+    gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=10, calmode='p')
+    gaincal(vis=active_ms, caltable='cal/peel.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=10, calmode='a')
+>>>>>>> 12706bfcb70d81bba95ebec86e21f7bedc3c8baa
     applycal(vis=active_ms, gaintable=['cal/peel.Ga','cal/peel.Gp'], calwt=False, flagbackup=False)
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_calib', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_calib', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
     # get some values for clean
-    epoch, directionRA, directionDEC = findCentre(modelimg_reg)
-    shape, cell = findShape(modelimg_reg)
-    clean(vis=active_ms, imagename='img/peel', gridmode='widefield', wprojplanes=512, mode='mfs',\
+    epoch, directionRA, directionDEC = findCentre(modelimg[0])
+    shape, cell = findShape(modelimg[0])
+    clean(vis=active_ms, imagename='img/peel', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=[shape], cell=cell,\
-        stokes='I', weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
+        stokes='I', nterms=3, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask=region)
 
     # selfcal
@@ -186,22 +201,22 @@ def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_calib2', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_calib2', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
-    clean(vis=active_ms, imagename='img/peel2', gridmode='widefield', wprojplanes=512, mode='mfs',\
+    clean(vis=active_ms, imagename='img/peel2', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=[shape], cell=cell,\
-        stokes='I', weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
+        stokes='I', nterms=3, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask=region)
     
     # remove peeled model
-    subtract(active_ms, 'img/peel2.model', wprojplanes=512)
+    subtract(active_ms, ['img/peel2.model.tt0','img/peel2.model.tt1','img/peel2.model.tt2'], wprojplanes=wprojplanes)
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_calib_tgtsub', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_calib_tgtsub', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
     # invert calibration table
@@ -218,22 +233,22 @@ def peel(active_ms, modelimg, region, refAnt, rob, cleanenv=True):
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_invcalib', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_invcalib', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
-    ftw(active_ms, modelimg=modelimg_reg_compl, wprojplanes=512)
+    ftw(active_ms, modelimg=modelimg_reg_compl, wprojplanes=wprojplanes)
     uvsub(vis=active_ms, reverse=True)
 
     # DEBUG
 #    default('clean')
-#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_invcalib_compladd', gridmode='widefield', wprojplanes=512,\
-#            mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+#    clean(vis=active_ms, imagename='img/'+str(sou)+'peel_invcalib_compladd', gridmode='widefield', wprojplanes=wprojplanes,\
+#            mode='mfs', nterms=3, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
     if cleanenv:
-        os.system('rm -rf '+modelimg_reg_compl)
-        os.system('rm -rf '+modelimg_reg)
+        for img in modelimg_reg_compl: os.system('rm -rf '+img)
+        for img in modelimg_reg: os.system('rm -rf '+img)
         splitted = active_ms.rsplit('peeled', 1)
         os.system('rm -rf '+'peel1'.join(splitted))
         os.system('rm -rf '+'peel2'.join(splitted))
