@@ -108,6 +108,14 @@ def ftw(active_ms, modelimg, wprojplanes=0):
         im.open(active_ms, usescratch=True)
         im.selectvis()
         im.defineimage()
+        # set nterms
+        if len(modelimg) > 1:
+            ia.open(modelimg[0])
+            icsys = ia.coordsys()
+            ia.close()
+            reffreqVal = icsys.referencevalue(type='spectral')['numeric'][0]
+            # set nterms and ref-freq
+            im.settaylorterms(ntaylorterms=len(modelimg),reffreq=reffreqVal)
         im.setoptions(ftmachine='wproject', wprojplanes=wprojplanes, padding=1.2)
         im.ft(model=modelimg)
         im.done() 
