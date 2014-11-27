@@ -108,6 +108,14 @@ def ftw(active_ms, modelimg, wprojplanes=0):
         im.open(active_ms, usescratch=True)
         im.selectvis()
         im.defineimage()
+        # set nterms
+        if len(modelimg) > 1:
+            ia.open(modelimg[0])
+            icsys = ia.coordsys()
+            ia.close()
+            reffreqVal = icsys.referencevalue(type='spectral')['numeric'][0]
+            # set nterms and ref-freq
+            im.settaylorterms(ntaylorterms=len(modelimg),reffreq=reffreqVal)
         im.setoptions(ftmachine='wproject', wprojplanes=wprojplanes, padding=1.2)
         im.ft(model=modelimg)
         im.done() 
@@ -169,7 +177,11 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
     active_ms = active_ms.replace('peel1','peel2')
 
     modelimg_reg = extrModel(modelimg, region, compl=False)
+<<<<<<< HEAD
     ftw(active_ms, modelimg=modelimg_reg, wprojplanes=512)
+=======
+    ftw(active_ms, modelimg=modelimg_reg, wprojplanes=wprojectplanes)
+>>>>>>> e1e4ff2fe8c11b8cf18c0364c0e519c429e8a16b
     gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     gaincal(vis=active_ms, caltable='cal/peel.Ga', solint='120s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
     applycal(vis=active_ms, gaintable=['cal/peel.Ga','cal/peel.Gp'], calwt=False, flagbackup=False)
