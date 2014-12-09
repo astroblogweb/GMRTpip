@@ -96,7 +96,10 @@ def step_import(active_ms):
     print "INFO: Created " + active_ms + " measurementset"
     
     # apply observation flags
-    gmrt_flag(active_ms, flagf)
+    if flagf!='':
+        gmrt_flag(active_ms, flagf)
+    else:
+        print "WARNING: no flag pre-applied."
     
     # Create listobs.txt for references
     default('listobs')

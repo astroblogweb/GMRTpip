@@ -13,9 +13,9 @@ months = {'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,'Jul':7,'Aug':8,'Sep':
           'Oct':10,'Nov':11,'Dec':12}
 
 # set parameters 
-base = '16jan19_007'      # base name of the visibility measurement set (the part before .ms)
-ms = base+'.ms'
-flagfilename = '19_007.16jan.flag'    # name of the gmrt online flag file
+base = '07PDA02_IGRJ.LTA_RR'      # base name of the visibility measurement set (the part before .ms)
+ms = base+'.MS'
+flagfilename = '07pda02_igrj.FLAG'    # name of the gmrt online flag file
 
 flagfile = open(flagfilename,'r')
 
