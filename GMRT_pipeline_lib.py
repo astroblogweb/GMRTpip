@@ -42,7 +42,7 @@ def getMaxAmp(caltable):
     maxamp=np.max(amps[good])
     return maxamp
 
-def plotGainCal(calt, amp=False, phase=False):
+def plotGainCal(calt, amp=False, phase=False, BL=False, delay=False):
     """Do the standard plot of gain solutions
     """
     tbLoc = casac.table()
@@ -54,24 +54,39 @@ def plotGainCal(calt, amp=False, phase=False):
     if amp == True:
         plotmax = getMaxAmp(calt)
         for ii in range(nplots):
-            filename='plots/'+calt.replace('cal/','')+'a_'+str(ii)+'.png'
+            filename=calt.replace('cal/','plots/')+'a_'+str(ii)+'.png'
             syscommand='rm -rf '+filename
             os.system(syscommand)
             antPlot=str(ii*3)+'~'+str(ii*3+2)
+            if BL: xaxis = 'antenna2'
+            else: xaxis = 'time'
             default('plotcal')
-            plotcal(caltable=calt,xaxis='time',yaxis='amp',antenna=antPlot,subplot=311,\
+            plotcal(caltable=calt,xaxis=xaxis,yaxis='amp',antenna=antPlot,subplot=311,\
                 iteration='antenna',plotrange=[0,0,0,plotmax],plotsymbol='o-',plotcolor='red',\
                 markersize=5.0,fontsize=10.0,showgui=False,figfile=filename)
     if phase == True:
         for ii in range(nplots):
-            filename='plots/'+calt.replace('cal/','')+'p_'+str(ii)+'.png'
+            filename=calt.replace('cal/','plots/')+'p_'+str(ii)+'.png'
+            syscommand='rm -rf '+filename
+            os.system(syscommand)
+            antPlot=str(ii*3)+'~'+str(ii*3+2)
+            if BL: xaxis = 'antenna2'
+            else: xaxis = 'time'
+            default('plotcal')
+            plotcal(caltable=calt,xaxis=xaxis,yaxis='phase',antenna=antPlot,subplot=311,\
+                overplot=False,clearpanel='Auto',iteration='antenna',plotrange=[0,0,-180,180],\
+                plotsymbol='o-',plotcolor='blue',markersize=5.0,fontsize=10.0,showgui=False,\
+                figfile=filename)
+    if delay == True:
+        for ii in range(nplots):
+            filename=calt.replace('cal/','plots/')+'_'+str(ii)+'.png'
             syscommand='rm -rf '+filename
             os.system(syscommand)
             antPlot=str(ii*3)+'~'+str(ii*3+2)
             default('plotcal')
-            plotcal(caltable=calt,xaxis='time',yaxis='phase',antenna=antPlot,subplot=311,\
-                overplot=False,clearpanel='Auto',iteration='antenna',plotrange=[0,0,-180,180],\
-                plotsymbol='o-',plotcolor='blue',markersize=5.0,fontsize=10.0,showgui=False,\
+            plotcal(caltable=calt,xaxis='time',yaxis='delay',antenna=antPlot,subplot=311,\
+                overplot=False,clearpanel='Auto',iteration='antenna',plotrange=[],\
+                plotsymbol='o-',markersize=5.0,fontsize=10.0,showgui=False,\
                 figfile=filename)
 
 
