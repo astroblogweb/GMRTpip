@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# GMRT pipeline to be run in CASA
+# GMRT pipeline to be run in CASA with exec_file()
 
 # Prepare fits file:
 # ~/phd/obs/GMRT/listscan-1.bin 24_017-02may-dual.lta
