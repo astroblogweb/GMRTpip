@@ -481,6 +481,24 @@ def step_selfcal(active_ms, freq, minBL_for_cal, sources):
             clean(vis=active_ms, imagename='img/'+str(sou)+'self'+str(cycle), gridmode='widefield',\
             	wprojplanes=256, niter=5000, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
             	cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask=sou_mask)
+
+            # Clipping
+            # TODO: test incresing clipping!
+
+            statsflags = getStatsflag(active_ms) 
+            print "INFO: Pre residual clipping flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%" 
+    
+            default('uvsub')
+            uvsub(vis=active_ms)
+            default('flagdata')
+            flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply')
+            #flagdata(vis=active_ms, mode='clip', field=gain_cal, scan=gain_cal_scan, clipminmax=clipminmax,\
+            #    	datacolumn='residual', action='apply')
+    
+            statsflags = getStatsflag(active_ms) 
+            print "INFO: After residual clipping flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%" 
+            
+            # recalibrating    
     
             refAntObj = RefAntHeuristics(vis=active_ms, field='0', geometry=True, flagging=True)
             refAnt = refAntObj.calculate()[0]
@@ -537,20 +555,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal, sources):
                 gaintable=['cal/'+str(sou)+'selfcal_gain'+str(cycle)+'.Gp']
 
             default('applycal')
-            applycal(vis=active_ms, field = '', gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=True)
-    
-            # Clipping
-            # TODO: flag ondulations ft of image
-    
-            statsflags = getStatsflag(active_ms) 
-            print "INFO: Pre flagging flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%" 
-    
-            default('flagdata')
-            flagdata(vis=active_ms, mode='tfcrop', datacolumn='residual', action='apply')
-    
-            statsflags = getStatsflag(active_ms) 
-            print "INFO: After flagging flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%" 
-            
+            applycal(vis=active_ms, field = '', gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=True)           
             
         # end of selfcal loop
     
@@ -624,17 +629,17 @@ def step_subtract(active_ms, sou):
 
 #######################################
 # Final clean
-def step_finalclean(active_ms, sou):
+def step_finalclean(active_ms):
     print "### FINAL CLEANING"
 
     default('clean')
-    clean(vis=active_ms, imagename='img/'+str(sou)+'superfinal', gridmode='widefield', wprojplanes=512,\
+    clean(vis=active_ms, imagename='img/superfinal', gridmode='widefield', wprojplanes=512,\
         	mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
         	imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask=sou_mask,\
         	uvtaper=True, outertaper=[taper])
     
     default('clean')
-    clean(vis=active_ms, imagename='img/'+str(sou)+'superfinal', gridmode='widefield', wprojplanes=512, mode='mfs',\
+    clean(vis=active_ms, imagename='img/superfinal', gridmode='widefield', wprojplanes=512, mode='mfs',\
         	nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean', \
                 multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
         	robust=rob, usescratch=True, mask=sou_mask, uvtaper=True, outertaper=[taper])
@@ -657,4 +662,4 @@ step_selfcal(active_ms, freq, minBL_for_cal, sources)
 #for sou in sources:
 #    active_ms = step_peeling(sou)
 #    step_subtract(active_ms, sou)
-step_finalclean(active_ms, sou)
+step_finalclean(active_ms)

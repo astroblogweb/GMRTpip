@@ -150,6 +150,12 @@ def plotBPCal(calt, amp=False, phase=False):
                 plotsymbol='o',plotcolor='blue',markersize=5.0,fontsize=10.0,showgui=False,figfile=filename)
 
 
+def makemask(imagename):
+    """Convert the MS to fits (pyrap not working in some environments)
+    use pybdsm to do source extraction
+    make a mask from it
+    """
+
 def correctPB(imgname, freq=0, phaseCentre=None):
     """Given an image "img" create the "img.pbcorr" which
     has each pixel corrected for the GMRT primary beam effect.
