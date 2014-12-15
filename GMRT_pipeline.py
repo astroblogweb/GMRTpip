@@ -2,10 +2,10 @@
 # GMRT pipeline to be run in CASA (casa --nologger --nogui --log2term) with exec_file()
 
 # Prepare fits file:
-# ~/phd/obs/GMRT/listscan-1.bin 24_017-02may-dual.lta
+# ~/scripts/GMRTpipeline/listscan-1.bin 24_017-02may-dual.lta
 # Edit log (dual: RR->610, LL->230) - set output name and 
 # remove unused antennas to reduce the file size
-# ~/phd/obs/GMRT/gvfits-1.bin 24_017-02may-dual.log
+# ~/scripts/GMRTpipeline/gvfits-1.bin 24_017-02may-dual.log
 
 # example of config file (GMRT_pipeline_conf.py) which must be in the working dir:
 #dataf = '24_017-610-REV.FITS'
@@ -32,16 +32,16 @@
 #taper = '15arcsec'
 # extended source expected?
 #extended = False
+# pipeline dir
+#pipdir = /home/stsf309/scripts/GMRTpipeline
 
 import os
 import sys
 import itertools
 import datetime
 import numpy as np
-from GMRT_pipeline_lib import *
-from make_mask import make_mask
 execfile('GMRT_pipeline_conf.py')
-#execfile('/home/hslxrsrv3/stsf309/phd/obs/GMRT/GMRT_pipeline_lib.py')
+execfile(pipdir+'/GMRT_pipeline_lib.py')
 
 #######################################
 # prepare env
@@ -474,28 +474,28 @@ def step_selfcal(active_ms, freq, minBL_for_cal, sources):
     
             default('clean')
             clean(vis=active_ms, imagename='img/'+str(sou)+'self'+str(cycle), gridmode='widefield',\
-            	wprojplanes=256, niter=10000, imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
+            	wprojplanes=512, niter=10000, imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
             	usescratch=True, mask=sou_mask)
     
             if extended:
                 default('clean')
                 clean(vis=active_ms, imagename='img/'+str(sou)+'self'+str(cycle), gridmode='widefield',\
-            	    wprojplanes=256, niter=5000, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
+            	    wprojplanes=512, niter=5000, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
             	    cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask=sou_mask)
 
             # make mask and re-do image
-            mask = make_mask('img/'+str(sou)+'self'+str(cycle)+'.image', threshpix=5, threshisl=3, atrous_do=False)
+            os.system(pipdir+'/setpp.sh make_mask.py img/'+str(sou)+'self'+str(cycle)+'.image threshpix=5 threshisl=3 atrous_do=False')
 
             default('clean')
             clean(vis=active_ms, imagename='img/'+str(sou)+'self'+str(cycle)+'-masked', gridmode='widefield',\
-            	wprojplanes=256, niter=10000, imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
-            	usescratch=True, mask=mask)
+            	wprojplanes=512, niter=5000, imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
+            	usescratch=True, mask='img/'+str(sou)+'self'+str(cycle)+'.mask')
 
             if extended:
                 default('clean')
                 clean(vis=active_ms, imagename='img/'+str(sou)+'self'+str(cycle)+'-masked', gridmode='widefield',\
-            	    wprojplanes=256, niter=5000, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
-            	    cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask=mask)
+            	    wprojplanes=512, niter=2500, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
+            	    cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask='img/'+str(sou)+'self'+str(cycle)+'.mask')
 
             # Clipping
             # TODO: test incresing clipping!
@@ -574,19 +574,19 @@ def step_selfcal(active_ms, freq, minBL_for_cal, sources):
             	robust=rob, usescratch=True, mask=sou_mask)
         
         # make mask and re-do image
-        mask = make_mask('img/'+str(sou)+'final.image', threshpix=5, threshisl=3, atrous_do=False)
+        os.system(pipdir+'/setpp.sh make_mask.py img/'+str(sou)+'final.image threshpix=5 threshisl=3 atrous_do=False')
 
         default('clean')
         clean(vis=active_ms, imagename='img/'+str(sou)+'final-masked', gridmode='widefield', wprojplanes=512,\
-        	mode='mfs', nterms=1, niter=10000, gain=0.1, psfmode='clark', imagermode='csclean',\
-        	imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask=mask)
+        	mode='mfs', nterms=1, niter=5000, gain=0.1, psfmode='clark', imagermode='csclean',\
+        	imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='img/'+str(sou)+'final.mask')
            
         if extended:
             default('clean')
             clean(vis=active_ms, imagename='img/'+str(sou)+'final-masked', gridmode='widefield', wprojplanes=512, mode='mfs',\
-            	nterms=1, niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', \
+            	nterms=1, niter=2500, gain=0.1, psfmode='clark', imagermode='csclean', \
                 multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
-            	robust=rob, usescratch=True, mask=mask)
+            	robust=rob, usescratch=True, mask='img/'+str(sou)+'final.mask')
 
     # end of cycle on sources
   
@@ -650,10 +650,13 @@ def step_subtract(active_ms, sou):
 
 #######################################
 # Final clean
-def step_finalclean(active_ms, sou):
+def step_finalclean(active_ms):
     print "### FINAL CLEANING"
 
     for sou in sources:
+
+        active_ms = 'target'+str(sou)+'.MS'
+
         default('clean')
         clean(vis=active_ms, imagename='img/'+str(sou)+'superfinal', gridmode='widefield', wprojplanes=512,\
             	mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
@@ -668,20 +671,20 @@ def step_finalclean(active_ms, sou):
         	        robust=rob, usescratch=True, mask=sou_mask, uvtaper=True, outertaper=[taper])
 
         # make mask and re-do image
-        mask = make_mask('img/'+str(sou)+'superfinal.image', threshpix=5, threshisl=3, atrous_do=False)
-    
+        os.system(pipdir+'/setpp.sh make_mask.py img/'+str(sou)+'superfinal.image threshpix=5 threshisl=3 atrous_do=False')
+
         default('clean')
         clean(vis=active_ms, imagename='img/'+str(sou)+'superfinal-masked', gridmode='widefield', wprojplanes=512,\
-            	mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-        	    imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask=mask,\
+            	mode='mfs', nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+        	    imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='img/'+str(sou)+'superfinal.mask',\
             	uvtaper=True, outertaper=[taper])
     
         if extended:
             default('clean')
             clean(vis=active_ms, imagename='img/'+str(sou)+'superfinal-masked', gridmode='widefield', wprojplanes=512, mode='mfs',\
-                	nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean', \
+                	nterms=1, niter=2500, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean', \
                     multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
-        	        robust=rob, usescratch=True, mask=mask, uvtaper=True, outertaper=[taper])
+        	        robust=rob, usescratch=True, mask='img/'+str(sou)+'superfinal.mask', uvtaper=True, outertaper=[taper])
 
         # pbcorr
         correctPB('img/'+str(sou)+'superfinal-masked.image', freq, phaseCentre=None)
@@ -689,15 +692,15 @@ def step_finalclean(active_ms, sou):
 
 # steps to execute
 active_ms = dataf.replace('FITS', 'MS')  # NOTE: do not commment this out!
-#step_env()
-#step_import(active_ms)
+step_env()
+step_import(active_ms)
 freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not commment this out!
-#step_preflag(active_ms, freq, n_chan)
-#step_setjy(active_ms)
-#step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
-#step_calib(active_ms, freq, minBL_for_cal)
+step_preflag(active_ms, freq, n_chan)
+step_setjy(active_ms)
+step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
+step_calib(active_ms, freq, minBL_for_cal)
 step_selfcal(active_ms, freq, minBL_for_cal, sources)
-#execfile('/home/hslxrsrv3/stsf309/phd/obs/GMRT/GMRT_peeling.py')
+#execfile(pipdir+'/GMRT_peeling.py')
 #for sou in sources:
 #    active_ms = step_peeling(sou)
 #    step_subtract(active_ms, sou)
