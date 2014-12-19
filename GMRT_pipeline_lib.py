@@ -9,9 +9,9 @@ def clipresidual(active_ms, model):
     """
     print "NOT IMPLEMENTED!"
 
-def getStatsflag(ms):
+def getStatsflag(ms, field='', scan=''):
     default('flagdata')
-    statsflags = flagdata(vis=ms, mode='summary', spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
+    statsflags = flagdata(vis=ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
     clearstat()
     return statsflags
 
