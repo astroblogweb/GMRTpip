@@ -19,7 +19,7 @@ import numpy as np
 
 def extrModel(modelimg, region, compl=False):
     """Extract only the part described by the region file
-    from one or more (nterms>1) modelimg
+    from one or more (nterms>1) model img
     """
     blankedmodelimg = []
 
@@ -161,7 +161,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
 #            imsize=4000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='4000-2.mask')
 
     modelimg_reg_compl = extrModel(modelimg, region, compl=True)
-    subtract(active_ms, modelimg_reg_compl, wprojplanes)
+    subtract(active_ms, modelimg_reg_compl, wprojplanes=wprojplanes)
 
     # DEBUG
 #    default('clean')
@@ -193,7 +193,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
     shape, cell = findShape(modelimg[0])
     clean(vis=active_ms, imagename='img/peel', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=[shape], cell=cell,\
-        stokes='I', nterms=3, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
+        stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask=region)
 
     # selfcal
@@ -209,11 +209,11 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
 
     clean(vis=active_ms, imagename='img/peel2', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=[shape], cell=cell,\
-        stokes='I', nterms=3, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
+        stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask=region)
     
     # remove peeled model
-    subtract(active_ms, ['img/peel2.model.tt0','img/peel2.model.tt1','img/peel2.model.tt2'], wprojplanes=wprojplanes)
+    subtract(active_ms, ['img/peel2.model.tt0','img/peel2.model.tt1'], wprojplanes=wprojplanes)
 
     # DEBUG
 #    default('clean')
