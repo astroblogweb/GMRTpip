@@ -3,11 +3,56 @@
 
 # Library for GMRT pipeline
 
-def clipresidual(active_ms, model):
+class Source(object):
+    def __init__(self, name, data):
+        self.name = name
+        self.ms = 'target_'+self.name+'.ms'
+        self.f = data['flux_cal'][0]
+        self.fscan = data['flux_cal'][1]
+        self.g = data['gain_cal'][0]
+        self.gscan = data['gain_cal'][1]
+        self.t = data['target'][0]
+        self.tscan = data['target'][1]
+        assert len(self.f) == 1
+
+        if 'mask' in data:
+            self.mask = data['mask']
+        else:
+            self.mask = ''
+
+        if 'sub' in data:
+            self.sub = data['sub']
+        else:
+            self.sub = ''
+
+        if 'peel' in data:
+            self.peel = data['peel']
+        else:
+            self.peel = []
+
+        if 'fmodel' in data:
+            self.fmodel = data['fmodel']
+        else:
+            self.fmodel = ''
+
+
+def clipresidual(active_ms, field='', scan=''):
     """Create residuals in the CORRECTED_DATA (then unusable!)
     and clip at 5 times the total flux of the model
     """
-    print "NOT IMPLEMENTED!"
+    # flag statistics before flagging
+    statsflags = getStatsflag(active_ms, field=field, scan=scan)
+    print "INFO: Before tfcrop flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+
+    default('uvsub')
+    uvsub(vis=active_ms)
+    default('flagdata')
+    flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
+
+    # flag statistics after flagging
+    statsflags = getStatsflag(active_ms, field=field, scan=scan)
+    print "INFO: After tfcrop flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+
 
 def getStatsflag(ms, field='', scan=''):
     default('flagdata')
