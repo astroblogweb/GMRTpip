@@ -12,7 +12,12 @@
 #flagf = ''
 # format: dict of dicts, each dict has values for a target
 # Mandatory fields are: flux_cal, gain_cal, target (all in format: ['fields','scans'])
-# Facoltative fields are: mask (region), sub (region), peel (list of regions), fmodel (model for flux cal)
+# Facoltative fields are:
+# mask (region, an initial mask for first cleaning),
+# sub (region, region where to subtract hi-res model before low-res image),
+# peel (list of regions, one for each source to peel),
+# fmodel (model for flux cal in case CASA default is not good)
+# mask_faint (region, with all faint sources that may be missed by source finder in making masks)
 #obs={'A2142':{'flux_cal':['0',''],'gain_cal':['1',''],'target':['2','']},\
 #'A2244':{'flux_cal':['0',''],'gain_cal':['3',''],'target':['4','']},\
 #'A2589':{'flux_cal':['7',''],'gain_cal':['5',''],'target':['6','']}}
@@ -29,6 +34,7 @@
 # extended source expected?
 #extended = True
 #multiscale = False
+#threshold = 50e-6 # expected final noise in Jy
 # pipeline dir
 #pipdir = '/home/stsf309/scripts/GMRTpipeline'
 
@@ -490,34 +496,12 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
         for cycle in xrange(5):
      
             print "INFO: starting SELFCAL cycle "+str(cycle)
-    
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/self'+str(cycle), gridmode='widefield',\
-            	wprojplanes=512, niter=10000, imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
-            	usescratch=True, mask=s.mask)
-    
-            if multiscale:
-                default('clean')
-                clean(vis=s.ms, imagename='img/'+s.name+'/self'+str(cycle), gridmode='widefield',\
-            	    wprojplanes=512, niter=5000, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
-            	    cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask=s.mask)
+            ts = str(expnoise*10*(5-cycle))+' Jy' # expected noise this cycle
 
-            # make mask and re-do image
-            if extended:
-                os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/self'+str(cycle)+'.image --threshpix=7 --threshisl=4 --atrous_do')
-            else:
-                os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/self'+str(cycle)+'.image --threshpix=7 --threshisl=4')
-
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/self'+str(cycle)+'-masked', gridmode='widefield',\
-            	wprojplanes=512, niter=5000, imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
-            	usescratch=True, mask='img/'+s.name+'/self'+str(cycle)+'.mask')
-
-            if multiscale:
-                default('clean')
-                clean(vis=s.ms, imagename='img/'+s.name+'/self'+str(cycle)+'-masked', gridmode='widefield',\
-            	    wprojplanes=512, niter=2500, multiscale=[0,5,10,25,50,100,300], imsize=sou_size,\
-            	    cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask='img/'+s.name+'/self'+str(cycle)+'.mask')
+            parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/self'+str(cycle), 'gridmode':'widefield', 'wprojplanes':512,\
+          	    'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+           	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask, 'threshold':ts}
+            cleanmaskclean(parms, s, multiscale, extended)
 
             # ft() model back - NOTE: if clean doesn't converge clean() fail to put the model, better do it by hand
             # and then clip on residuals
@@ -540,6 +524,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
                 minsnr=1.0
             else:
                 minsnr=3.0
+
             default('gaincal')
             gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', solint=solint, minsnr=minsnr,\
             	selectdata=True, uvrange='>50m', refant=refAnt, minblperant=minBL_for_cal, gaintable=[], calmode='p')
@@ -582,36 +567,11 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
         # end of selfcal loop
     
         # Final cleaning
-        default('clean')
-        clean(vis=s.ms, imagename='img/'+s.name+'/final', gridmode='widefield', wprojplanes=512,\
-        	mode='mfs', nterms=1, niter=10000, gain=0.1, psfmode='clark', imagermode='csclean',\
-        	imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask=s.mask)
-           
-        if multiscale:
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/final', gridmode='widefield', wprojplanes=512, mode='mfs',\
-            	nterms=1, niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', \
-                multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
-            	robust=rob, usescratch=True, mask=s.mask)
-        
-        # make mask and re-do image
-        if extended:
-            os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/final.image --threshpix=7 --threshisl=4 --atrous_do')
-        else:
-            os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/final.image --threshpix=7 --threshisl=4')
-
-        default('clean')
-        clean(vis=s.ms, imagename='img/'+s.name+'/final-masked', gridmode='widefield', wprojplanes=512,\
-        	mode='mfs', nterms=1, niter=5000, gain=0.1, psfmode='clark', imagermode='csclean',\
-        	imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='img/'+s.name+'/final.mask')
-           
-        if multiscale:
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/final-masked', gridmode='widefield', wprojplanes=512, mode='mfs',\
-            	nterms=1, niter=2500, gain=0.1, psfmode='clark', imagermode='csclean', \
-                multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
-            	robust=rob, usescratch=True, mask='img/'+s.name+'/final.mask')
-
+        parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/final', 'gridmode':'widefield', 'wprojplanes':512,\
+          	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+       	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask, 'threshold':ts}
+        cleanmaskclean(parms, s, multiscale, extended)
+       
     # end of cycle on sources
   
     
@@ -622,6 +582,7 @@ def step_peeling():
     print "### PEELING"
 
     for s in sources:
+        os.system('rm -r img/'+s.name+'/peel*')
         modelforpeel = 'img/'+s.name+'/final-masked.model'
         refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
         refAnt = refAntObj.calculate()[0]
@@ -629,39 +590,14 @@ def step_peeling():
 
         for i, sourcetopeel in enumerate(s.peel):
 
-            s.ms = peel(s.ms, modelforpeel, sourcetopeel, refAnt, rob, cleanenv=True)
-        
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/peel'+str(i), gridmode='widefield', wprojplanes=512,\
-            	mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-        	    imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask=s.mask)
-        
-            if multiscale:
-                default('clean')
-                clean(vis=s.ms, imagename='img/'+s.name+'/peel'+str(i), gridmode='widefield', wprojplanes=512, mode='mfs',\
-            	    nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-                    multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
-            	    usescratch=True, mask=s.mask)
-
-            # make mask and re-do image
-            if extended:
-                os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/peel'+str(i)+'.image --threshpix=7 --threshisl=4 --atrous_do')
-            else:
-                os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/peel'+str(i)+'.image --threshpix=7 --threshisl=4')
-
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/peel'+str(i)+'-masked', gridmode='widefield', wprojplanes=512,\
-            	mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-        	    imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob, usescratch=True, mask='img/'+s.name+'/peel'+str(i)+'.mask')
-        
-            if multiscale:
-                default('clean')
-                clean(vis=s.ms, imagename='img/'+s.name+'/peel'+str(i)+'-masked', gridmode='widefield', wprojplanes=512, mode='mfs',\
-            	    nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-                    multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, weighting='briggs', robust=rob,\
-            	    usescratch=True, mask='img/'+s.name+'/peel'+str(i)+'.mask')
-
-            modelforpeel = 'img/'+s.name+'/peel'+str(i)+'.model'
+            s.ms = peel(s.ms, modelforpeel, sourcetopeel, refAnt, rob-0.5, cleanenv=True)
+ 
+            parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/peel'+str(i), 'gridmode':'widefield', 'wprojplanes':512,\
+            	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+        	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask, 'threshold':str(expnoise)+' Jy'}
+            cleanmaskclean(parms, s, multiscale, extended)
+       
+            modelforpeel = 'img/'+s.name+'/peel'+str(i)+'-masked.model'
 
 
 #######################################
@@ -671,21 +607,13 @@ def step_subtract():
     print "### SUBTRACTING"
 
     for s in sources:
+        os.system('rm -r img/'+s.name+'/hires*')
         # make a high res image to remove all the extended components
-        default('clean')
-        clean(vis=s.ms, imagename='img/'+s.name+'/hires', gridmode='widefield', wprojplanes=512,\
-            mode='mfs', nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-            imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=-1, usescratch=True, mask=s.mask,\
-            selectdata=True, uvrange='>4klambda')
-
-        # make mask and re-do image
-        os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/hires.image --threshpix=7 --threshisl=4')
-
-        default('clean')
-        clean(vis=s.ms, imagename='img/'+s.name+'/hires-masked', gridmode='widefield', wprojplanes=512,\
-            mode='mfs', nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-            imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=-1, usescratch=True,\
-            selectdata=True, uvrange='>4klambda', mask='img/'+s.name+'/hires.mask')
+        parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/hires', 'gridmode':'widefield', 'wprojplanes':512,\
+           	'mode':'mfs', 'nterms':1, 'niter':5000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+            'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob-1, 'usescratch':True, 'mask':s.mask, \
+            'selectdata':True, 'uvrange':'>4klambda','threshold':str(expnoise)+' Jy'}
+        cleanmaskclean(parms, s, multiscale=False, extended=False)
 
         # subtract 
         subtract(s.ms, 'img/'+s.name+'/hires-masked.model', region=s.sub, wprojplanes=512)
@@ -697,39 +625,14 @@ def step_finalclean():
     print "### FINAL CLEANING"
 
     for s in sources:
+        os.system('rm -r img/'+s.name+'/superfinal*')
 
-        default('clean')
-        clean(vis=s.ms, imagename='img/'+s.name+'/superfinal', gridmode='widefield', wprojplanes=512,\
-            	mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-        	    imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask=s.mask,\
-            	uvtaper=True, outertaper=[taper])
-    
-        if multiscale:
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/superfinal', gridmode='widefield', wprojplanes=512, mode='mfs',\
-                	nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean', \
-                    multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
-        	        robust=rob, usescratch=True, mask=s.mask, uvtaper=True, outertaper=[taper])
-
-        # make mask and re-do image
-        if extended:
-            os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/superfinal.image --threshpix=7 --threshisl=4 --atrous_do')
-        else:
-            os.system(pipdir+'/setpp.sh make_mask.py img/'+s.name+'/superfinal.image --threshpix=7 --threshisl=4')
-
-        default('clean')
-        clean(vis=s.ms, imagename='img/'+s.name+'/superfinal-masked', gridmode='widefield', wprojplanes=512,\
-            	mode='mfs', nterms=1, niter=5000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-        	    imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='img/'+s.name+'/superfinal.mask',\
-            	uvtaper=True, outertaper=[taper])
-    
-        if multiscale:
-            default('clean')
-            clean(vis=s.ms, imagename='img/'+s.name+'/superfinal-masked', gridmode='widefield', wprojplanes=512, mode='mfs',\
-                	nterms=1, niter=2500, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean', \
-                    multiscale=[0,5,10,25,50,100,300], imsize=sou_size, cell=sou_res, stokes='I', weighting='briggs',\
-        	        robust=rob, usescratch=True, mask='img/'+s.name+'/superfinal.mask', uvtaper=True, outertaper=[taper])
-
+        parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/superfinal', 'gridmode':'widefield', 'wprojplanes':512,\
+           	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+            'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask, \
+            'uvtaper':True, 'outertaper':[taper], 'threshold':str(expnoise)+' Jy'}
+        cleanmaskclean(parms, s, multiscale, extended)
+        
         # pbcorr
         correctPB('img/'+s.name+'/superfinal-masked.image', freq, phaseCentre=None)
  

@@ -215,9 +215,9 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
 
     # DEBUG
     #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_calib2', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
+    #clean(vis=active_ms, imagename='img/DEBUG'+region.replace('.crtf','')+'peel_calib2', gridmode='widefield', wprojplanes=wprojplanes,\
+    #        mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
+    #        imsize=5000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
 
     default('clean')
     clean(vis=active_ms, imagename='img/peel2', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
@@ -266,8 +266,8 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, clean
     #        imsize=2000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
 
     if cleanenv:
-        os.system('cp -r cal/peel2.Ga cal/'+region+'-peel.Ga') # copy solutions
-        os.system('cp -r cal/peel2.Gp cal/'+region+'-peel.Gp') # copy solutions
+        os.system('cp -r cal/peel2.Ga cal/'+region.replace('.crtf','')+'-peel.Ga') # copy solutions
+        os.system('cp -r cal/peel2.Gp cal/'+region.replace('.crtf','')+'-peel.Gp') # copy solutions
         for img in modelimg_reg_compl: os.system('rm -rf '+img)
         for img in modelimg_reg: os.system('rm -rf '+img)
         splitted = active_ms.rsplit('peeled', 1)

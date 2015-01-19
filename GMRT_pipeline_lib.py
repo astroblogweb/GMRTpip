@@ -35,10 +35,50 @@ class Source(object):
         else:
             self.fmodel = ''
 
+        if 'mask_faint' in data:
+            self.mask_faint = data['mask_faint']
+        else:
+            self.mask_faint = ''
+
+def cleanmaskclean(parms, s, multiscale=False, extended=False):
+    """
+    Clean then make a mask and clean again
+    parms: dict of parameters for the clean task
+    """
+    default('clean')
+    clean(**parms)
+   
+    if multiscale:
+        parms['multiscale']=[0,5,10,25,50,100,300]
+        default('clean')
+        clean(**parms)
+
+    # make mask and re-do image
+    if extended:
+        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4 --atrous_do')
+    else:
+        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4')
+
+    if s.mask_faint != '':
+        parms['mask']=[parms['imagename']+'.newmask',s.mask_faint]
+    else:
+        parms['mask']=parms['imagename']+'.newmask'
+
+    parms['multiscale']=[]
+    parms['imagename']=parms['imagename']+'-masked'
+    default('clean')
+    clean(**parms)
+   
+    if multiscale:
+        parms['multiscale']=[0,5,10,25,50,100,300]
+        default('clean')
+        clean(**parms)
+
 
 def clipresidual(active_ms, field='', scan=''):
     """Create residuals in the CORRECTED_DATA (then unusable!)
     and clip at 5 times the total flux of the model
+    NOTE: the ms CORRECTED_DATA will be corrupted!
     """
     # flag statistics before flagging
     statsflags = getStatsflag(active_ms, field=field, scan=scan)
@@ -215,7 +255,7 @@ def correctPB(imgname, freq=0, phaseCentre=None):
     if freq == 0: freq = cs.restfrequency()['value'][0]
 
     # find the correct freq
-    freq = min([153,235,325,610,1400], key=lambda x:abs(x-freq))
+    freq = min([153,235,325,610,1400], key=lambda x:abs(x-freq/1.e6))
     print "Frequency is", freq, "MHz"
 
     # from http://gmrt.ncra.tifr.res.in/gmrt_hpage/Users/doc/manual/UsersManual/node27.html
