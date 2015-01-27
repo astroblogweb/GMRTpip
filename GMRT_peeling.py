@@ -135,7 +135,7 @@ def subtract(active_ms, modelimg, region='', wprojplanes=0):
     uvsub(vis=active_ms)
 
 
-def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes = 512, cleanenv=True):
+def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanenv=True):
     """General function to call in sequence all the steps
     active_ms: MS with calibrated data in DATA
     modelimg: model of the whole sky (single img or array for nterms>1)

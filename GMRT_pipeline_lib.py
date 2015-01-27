@@ -13,7 +13,6 @@ class Source(object):
         self.gscan = data['gain_cal'][1]
         self.t = data['target'][0]
         self.tscan = data['target'][1]
-        assert len(self.f) == 1
 
         if 'mask' in data:
             self.mask = data['mask']
@@ -40,21 +39,31 @@ class Source(object):
         else:
             self.mask_faint = ''
 
-def cleanmaskclean(parms, s, multiscale=False, extended=False):
+        if 'multiscale' in data:
+            self.multiscale = data['multiscale']
+        else:
+            self.multiscale = []
+
+        if 'extended' in data:
+            self.extended = data['extended']
+        else:
+            self.extended = False
+
+        if 'expnoise' in data:
+            self.expnoise = data['expnoise']
+        else:
+            self.expnoise = 100.e-6
+
+def cleanmaskclean(parms, s):
     """
     Clean then make a mask and clean again
     parms: dict of parameters for the clean task
     """
     default('clean')
     clean(**parms)
-   
-    if multiscale:
-        parms['multiscale']=[0,5,10,25,50,100,300]
-        default('clean')
-        clean(**parms)
 
     # make mask and re-do image
-    if extended:
+    if s.extended:
         os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4 --atrous_do')
     else:
         os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4')
@@ -64,17 +73,10 @@ def cleanmaskclean(parms, s, multiscale=False, extended=False):
     else:
         parms['mask']=parms['imagename']+'.newmask'
 
-    parms['multiscale']=[]
     parms['imagename']=parms['imagename']+'-masked'
     default('clean')
     clean(**parms)
    
-    if multiscale:
-        parms['multiscale']=[0,5,10,25,50,100,300]
-        default('clean')
-        clean(**parms)
-
-
 def clipresidual(active_ms, field='', scan=''):
     """Create residuals in the CORRECTED_DATA (then unusable!)
     and clip at 5 times the total flux of the model
@@ -99,6 +101,28 @@ def getStatsflag(ms, field='', scan=''):
     statsflags = flagdata(vis=ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
     clearstat()
     return statsflags
+
+def FlagKcal(caltable, sigma = 5, cycles = 3):
+    """Flag delays outside n sigmas
+    Better high number of cycles (3) at high sigma (5)
+    """
+    tb.open(caltable, nomodify=False)
+    pars=tb.getcol('FPARAM')
+    flags=tb.getcol('FLAG')
+    ants=tb.getcol('ANTENNA1')
+    totflag_before = sum(flags.flatten())
+    for c in xrange(cycles):
+        for ant in set(ants):
+            parant = pars[:,:, np.where( ants == ant ) ]
+            flagant = flags[:,:, np.where( ants == ant ) ]
+            good = np.logical_not(flagant)
+            if sum(good.flatten()) == 0: continue # all flagged antenna, continue
+            flagant[ np.abs( parant - np.mean(parant[good]) ) > sigma * np.std( parant[good] ) ] = True
+            flags[:,:, np.where( ants == ant ) ] = flagant
+    tb.putcol('FLAG', flags)
+    totflag_after = sum(flags.flatten())
+    print "Kcal: Flagged", totflag_after-totflag_before, "points out of", len(flags.flatten()) ,"."
+    tb.close()
 
 def FlagBLcal(caltable, sigma = 5):
     """Flag BL which has a blcal outside n sigmas
@@ -145,9 +169,11 @@ def plotGainCal(calt, amp=False, phase=False, BL=False, delay=False):
             antPlot=str(ii*3)+'~'+str(ii*3+2)
             if BL: xaxis = 'antenna2'
             else: xaxis = 'time'
+            if BL: plotsymbol = 'o'
+            else: plotsymbol = 'o-'
             default('plotcal')
             plotcal(caltable=calt,xaxis=xaxis,yaxis='amp',antenna=antPlot,subplot=311,\
-                iteration='antenna',plotrange=[0,0,0,plotmax],plotsymbol='o-',plotcolor='red',\
+                iteration='antenna',plotrange=[0,0,0,plotmax],plotsymbol=plotsymbol,plotcolor='red',\
                 markersize=5.0,fontsize=10.0,showgui=False,figfile=filename)
     if phase == True:
         for ii in range(nplots):
