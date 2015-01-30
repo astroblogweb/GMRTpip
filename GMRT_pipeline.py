@@ -637,8 +637,12 @@ def step_subtract():
     print "### SUBTRACTING"
 
     for s in sources:
-        os.system('cp -r '+s.ms+' '+s.ms+'-bkpprehires')
+        if os.path.exists(s.ms+'-sub'): os.system('rm -r '+s.ms+'-sub')
         os.system('rm -r img/'+s.name+'/hires*')
+
+        os.system('cp -r '+s.ms+' '+s.ms+'-sub')
+        s.ms = s.ms+'-sub'
+
         # make a high res image to remove all the extended components
         parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/hires', 'gridmode':'widefield', 'wprojplanes':512,\
            	'mode':'mfs', 'nterms':1, 'niter':5000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
@@ -652,20 +656,20 @@ def step_subtract():
 
 #######################################
 # Final clean
-def step_finalclean():
-    print "### FINAL CLEANING"
+def step_lowresclean():
+    print "### LOW RESOLUTION CLEANING"
 
     for s in sources:
-        os.system('rm -r img/'+s.name+'/superfinal*')
+        os.system('rm -r img/'+s.name+'/lowres*')
 
-        parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/superfinal', 'gridmode':'widefield', 'wprojplanes':512,\
+        parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/lowres', 'gridmode':'widefield', 'wprojplanes':512,\
            	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
             'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask, \
             'uvtaper':True, 'outertaper':[taper], 'threshold':str(s.expnoise)+' Jy', 'multiscale':s.multiscale}
         cleanmaskclean(parms, s)
         
         # pbcorr
-        correctPB('img/'+s.name+'/superfinal-masked.image', freq, phaseCentre=None)
+        correctPB('img/'+s.name+'/lowres-masked.image', freq, phaseCentre=None)
  
 
 # steps to execute
@@ -679,4 +683,4 @@ step_calib(active_ms, freq, minBL_for_cal)
 step_selfcal(active_ms, freq, minBL_for_cal)
 step_peeling()
 step_subtract()
-step_finalclean()
+step_lowresclean()
