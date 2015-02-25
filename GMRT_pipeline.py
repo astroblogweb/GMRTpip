@@ -35,7 +35,7 @@
 # taper final image
 #taper = '25arcsec'
 # pipeline dir
-#pipdir = '/home/stsf309/scripts/GMRTpipeline'
+#pipdir = '/home/stsf309/GMRTpipeline'
 
 import os
 import sys
