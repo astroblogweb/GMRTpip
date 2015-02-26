@@ -556,7 +556,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
                     selectdata=True, uvrange='>50m', refant=refAnt, minblperant=minBL_for_cal, gaintype='K', \
                     interp=['linear'], gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.Gp'])
                 # flag outliers
-                FlagKcal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', sigma = 5, cycles = 3)
+                FlagCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', sigma = 5, cycles = 3)
                 # apply just for propagate K flags
                 default('applycal')
                 applycal(vis=s.ms, field = '', gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.K'], calwt=False, flagbackup=True)           
@@ -573,12 +573,13 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
                     gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.Ga',\
                     	selectdata=True, uvrange='>50m', solint=solint, minsnr=minsnr, refant=refAnt,\
                     	minblperant=minBL_for_cal, gaintable=[], calmode='a')
+                    FlagCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Ga', sigma = 3, cycles = 3)
      
             # plot gains
             if cycle >= 3: 
                 plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', phase=True)
                 plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Ga', amp=True)
-                #plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', delay=True)
+                plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', delay=True)
             else:
                 plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', phase=True)
             

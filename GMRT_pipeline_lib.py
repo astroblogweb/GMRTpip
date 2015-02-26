@@ -64,9 +64,9 @@ def cleanmaskclean(parms, s):
 
     # make mask and re-do image
     if s.extended:
-        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4 --atrous_do')
+        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3 --atrous_do')
     else:
-        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4')
+        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3')
 
     if s.mask_faint != '':
         parms['mask']=[parms['imagename']+'.newmask',s.mask_faint]
@@ -74,6 +74,7 @@ def cleanmaskclean(parms, s):
         parms['mask']=parms['imagename']+'.newmask'
 
     parms['imagename']=parms['imagename']+'-masked'
+    parms['niter']=parms['niter']/3 # reduce number if clean iterations in masked mode
     default('clean')
     clean(**parms)
    
@@ -102,12 +103,18 @@ def getStatsflag(ms, field='', scan=''):
     clearstat()
     return statsflags
 
-def FlagKcal(caltable, sigma = 5, cycles = 3):
+def FlagCal(caltable, sigma = 5, cycles = 3):
     """Flag delays outside n sigmas
     Better high number of cycles (3) at high sigma (5)
     """
     tb.open(caltable, nomodify=False)
-    pars=tb.getcol('FPARAM')
+    if 'CPARAM' in tb.colnames():
+        pars=tb.getcol('CPARAM')
+    elif 'FPARAM' in tb.colnames():
+        pars=tb.getcol('FPARAM')
+    else:
+        print "WARNING: cannot flag "+caltable+". Unknown type."
+        return
     flags=tb.getcol('FLAG')
     ants=tb.getcol('ANTENNA1')
     totflag_before = sum(flags.flatten())
@@ -121,7 +128,7 @@ def FlagKcal(caltable, sigma = 5, cycles = 3):
             flags[:,:, np.where( ants == ant ) ] = flagant
     tb.putcol('FLAG', flags)
     totflag_after = sum(flags.flatten())
-    print "Kcal: Flagged", totflag_after-totflag_before, "points out of", len(flags.flatten()) ,"."
+    print caltable,": Flagged", totflag_after-totflag_before, "points out of", len(flags.flatten()) ,"."
     tb.close()
 
 def FlagBLcal(caltable, sigma = 5):
