@@ -83,19 +83,44 @@ def clipresidual(active_ms, field='', scan=''):
     and clip at 5 times the total flux of the model
     NOTE: the ms CORRECTED_DATA will be corrupted!
     """
-    # flag statistics before flagging
-    statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: Before tfcrop flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
 
     default('uvsub')
     uvsub(vis=active_ms)
+
+    print "INFO: removing baselines with high residuals"
+    ms.open(active_ms, nomodify=False)
+    ms.selectinit(datadescid=0)
+    ms.msselect({'field':field, 'scan':scan})
+    # TODO: ask for residual_amplitude and split this function?
+    d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2'])
+    # cycle on corr
+    for corr in xrange(len(d['corrected_amplitude'])):
+        # cycle on channels
+        for chan in xrange(len(d['corrected_amplitude'][corr])):
+            amp_chan = d['corrected_amplitude'][corr][chan][~d['flag'][corr][chan]] # get unflagged data
+            ant1_chan = d['antenna1'][~d['flag'][corr][chan]]
+            ant2_chan = d['antenna2'][~d['flag'][corr][chan]]
+            med = np.median(amp_chan)
+            for ant1 in set(ant1_chan):
+                for ant2 in set(ant2_chan):
+                    bl_med = np.median( amp_chan[ (ant1_chan==ant1) & (ant2_chan==ant2) ] )
+                    # if BL residuals are 3 times bigger than med, flag
+                    if bl_med > 2*med:
+                        print "Flagging BL: ",ant1, ant2, " - chan:", chan
+                        d['flag'][corr][chan][ (d['antenna1']==ant1) & (d['antenna2']==ant2) ] = True
+    ms.putdata({'flag':d['flag']})
+    ms.close()
+
+    # flag statistics before flagging
+    statsflags = getStatsflag(active_ms, field=field, scan=scan)
+    print "INFO: Before tfcrop flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+
     default('flagdata')
     flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
 
     # flag statistics after flagging
     statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: After tfcrop flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
-
+    print "INFO: After tfcrop flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
 
 def getStatsflag(ms, field='', scan=''):
     default('flagdata')
@@ -247,7 +272,7 @@ def plotBPCal(calt, amp=False, phase=False):
 
     if amp == True:
         for ii in range(nplots):
-            filename='plots/'+calt.replace('cal/','')+'a_'+str(ii)+'.png'
+            filename=calt.replace('cal/','plots/')+'a_'+str(ii)+'.png'
             syscommand='rm -rf '+filename
             os.system(syscommand)
             antPlot=str(ii*3)+'~'+str(ii*3+2)
@@ -258,7 +283,7 @@ def plotBPCal(calt, amp=False, phase=False):
 
     if phase == True:
         for ii in range(nplots):
-            filename='plots/'+calt.replace('cal/','')+'p_'+str(ii)+'.png'
+            filename=calt.replace('cal/','plots/')+'p_'+str(ii)+'.png'
             syscommand='rm -rf '+filename
             os.system(syscommand)
             antPlot=str(ii*3)+'~'+str(ii*3+2)
