@@ -132,8 +132,7 @@ def step_preflag(active_ms, freq, n_chan):
     logging.info("### FIRST FLAGGING")
     
     # report initial statistics
-    statsflags = getStatsflag(active_ms)
-    logging.info("Initial flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, note='Initial')
     
     if len(n_chan) == 1 and n_chan[0] == 512:
         if freq > 600e6 and freq < 650e6: spw='0:0~10,0:502~511' # 610 MHz
@@ -172,8 +171,7 @@ def step_preflag(active_ms, freq, n_chan):
     	correlation='ABS_ALL', action='apply', flagbackup=False)
     
     # flag statistics after pre-flag
-    statsflags = getStatsflag(active_ms)
-    logging.info("After pre-flagging flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, note='After pre-flagging')
     
     # save flag status
     default('flagmanager')
@@ -291,8 +289,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             	gaintable=['cal/flux_cal'+str(s.f)+'/'+step+'.B'], calwt=False, flagbackup=False, interp=['nearest'])
             
             # flag statistics after applycal
-            statsflags = getStatsflag(active_ms, field=s.f, scan=s.fscan)
-            logging.info("Bandpass cycle \""+step+"\" flag percentage after applycal: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+            statsFlag(active_ms, field=s.f, scan=s.fscan, note='Bandpass cycle \"'+step+'\" after apply')
          
             # Run an rflag after the first and second cycle
             # to remove most obvious RFI
@@ -306,8 +303,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
                 flagdata(vis=active_ms, mode='extend', field=s.f, scan=s.fscan, flagbackup=False)
                 
                 # flag statistics after flagging
-                statsflags = getStatsflag(active_ms, field=s.f, scan=s.fscan)
-                logging.info("Bandpass cycle \""+step+"\" flag percentage after flagging: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+                statsFlag(active_ms, field=s.f, scan=s.fscan, note='Bandpass cycle \""+step+"\" after flagging')
 
                 # finally clip on residuals
                 clipresidual(active_ms, field=s.f, scan=s.fscan)
@@ -317,8 +313,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
     # end of flux_cal cycles   
 
     # flag statistics after flagging
-    statsflags = getStatsflag(active_ms)
-    logging.info("Before bandpass applycal total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, note='Before apply bandpass')
 
     for s in sources:
         # apply bandpass to gain_cal
@@ -331,8 +326,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             gaintable=['cal/flux_cal'+str(s.f)+'/'+step+'.B'], calwt=False, flagbackup=False, interp=['nearest'])
 
     # flag statistics after flagging
-    statsflags = getStatsflag(active_ms)
-    logging.info("Before flagging total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, note='Before flagging')
 
     # run the final flagger
     default('flagdata')
@@ -343,8 +337,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
     flagdata(vis=active_ms, mode='extend', flagbackup=False)
     
     # flag statistics after flagging
-    statsflags = getStatsflag(active_ms)
-    logging.info("After flagging total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, note='After flagging')
  
 
 #######################################

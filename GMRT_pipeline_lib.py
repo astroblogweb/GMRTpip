@@ -143,8 +143,7 @@ def clipresidual(active_ms, field='', scan=''):
     uvsub(vis=active_ms)
 
     # flag statistics before flagging
-    statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    logging.info("Before BL flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, field=field, scan=scan, note='Before BL flag')
 
     logging.debug("Removing baselines with high residuals:")
     import itertools
@@ -182,21 +181,32 @@ def clipresidual(active_ms, field='', scan=''):
     ms.close()
 
     # flag statistics before flagging
-    statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    logging.info("Before tfcrop flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, field=field, scan=scan, note='Before tfcrop')
 
     default('flagdata')
     flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
 
     # flag statistics after flagging
-    statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    logging.info("After all clipping flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+    statsFlag(active_ms, field=field, scan=scan, note='After all clipping')
 
-def getStatsflag(ms, field='', scan=''):
+
+def statsFlag(active_ms, field='', scan='', note=''):
     default('flagdata')
-    statsflags = flagdata(vis=ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
-    clearstat()
-    return statsflags
+    t = flagdata(vis=active_ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
+    #clearstat()
+    log = 'Flag statistics ('+note+'):'
+    log += '\nAntenna, '
+    for k in sorted(t['antenna']):
+        log += k +': %d.2%% - ' % (100.*t['antenna'][k]['flagged']/t['antenna'][k]['total'])
+    log += '\nCorrelation, '
+    for k, v in t['correlation'].items():
+        log += k +': %d.2%% - ' % (100.*v['flagged']/v['total'])
+    log += '\nSpw, '
+    for k, v in t['spw'].items():
+        log += k +': %d.2%% - ' % (100.*v['flagged']/v['total'])
+    log += '\nTotal: %d.2%%' % (100.*t['flagged']/t['total'])
+    logging.debug(log.replace(' - \n','\n'))
+
 
 def FlagCal(caltable, sigma = 5, cycles = 3):
     """Flag sol outside n sigmas
