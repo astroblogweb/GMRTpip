@@ -286,7 +286,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             # Plot bandpass
             plotBPCal('cal/flux_cal'+str(s.f)+'/'+step+'.B', amp=True, phase=True)
 
-            logging.info"Apply bandpass")
+            logging.info("Apply bandpass")
             default('applycal')
             applycal(vis=active_ms, selectdata=True, field=s.f, scan=s.fscan,\
             	gaintable=['cal/flux_cal'+str(s.f)+'/'+step+'.B'], calwt=False, flagbackup=False, interp=['nearest'])
