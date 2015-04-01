@@ -33,7 +33,6 @@ def add_coloring_to_emit_ansi(fn):
         else:
             color = '\x1b[0m' # normal
         args[1].msg = color + args[1].msg +  '\x1b[0m'  # normal
-        #print "after"
         return fn(*args)
     return new
 
@@ -145,28 +144,27 @@ def clipresidual(active_ms, field='', scan=''):
 
     # flag statistics before flagging
     statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: Before BL flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("Before BL flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
 
-    print "INFO: removing baselines with high residuals"
+    logging.debug("Removing baselines with high residuals:")
     import itertools
     ms.open(active_ms, nomodify=False)
     metadata = ms.metadata()
     # datadesc ids are usually one per spw, but ms can also be splitted in corr
     for datadescid in metadata.datadescids():
-        print "DEBUG: working on datadesc: "+str(datadescid)
+        logging.debug("Working on datadesc: "+str(datadescid))
         ms.msselect({'field':field, 'scan':scan})
         # TODO: ask for residual_amplitude and split this function?
         d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2','axis_info'], ifraxis=True)
         # cycle on corr
         for corr in xrange(len(d['corrected_amplitude'])):
-            print "DEBUG: working on corr: "+d['axis_info']['corr_axis'][corr]
+            logging.debug("Working on corr: "+d['axis_info']['corr_axis'][corr])
             # cycle on channels
             for chan in xrange(len(d['corrected_amplitude'][corr])):
-                print "DEBUG: working on chan: "+str(chan)
+                #logging.debug("Working on chan: "+str(chan))
                 meds = []
                 # cycle on bl
                 for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
-                    #print "DEBUG: working on bl: "+d['axis_info']['ifr_axis']['ifr_name'][bl]
                     amp = d['corrected_amplitude'][corr][chan][bl][~d['flag'][corr][chan][bl]] # get unflagged data
                     if amp != []: meds.append(np.median( amp[(amp == amp)] ))
                 med = np.mean(meds)
@@ -177,7 +175,7 @@ def clipresidual(active_ms, field='', scan=''):
                         bl_med = np.median( amp[(amp == amp)] )
                         # if BL residuals are 3 times out of med rms, flag
                         if abs(bl_med - med) > 3*rms:
-                            print "Flagging corr: ", d['axis_info']['corr_axis'][corr]," - chan:", chan," - BL: ",d['axis_info']['ifr_axis']['ifr_name'][bl]
+                            logging.debug("Flagging corr: ", d['axis_info']['corr_axis'][corr]," - chan:", chan," - BL: ",d['axis_info']['ifr_axis']['ifr_name'][bl])
                             d['flag'][corr][chan][bl] = True
         # TODO: extend flags for BL which appears often
         ms.putdata({'flag':d['flag']})
@@ -185,14 +183,14 @@ def clipresidual(active_ms, field='', scan=''):
 
     # flag statistics before flagging
     statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: Before tfcrop flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("Before tfcrop flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
 
     default('flagdata')
     flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
 
     # flag statistics after flagging
     statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: After all clipping flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("After all clipping flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
 
 def getStatsflag(ms, field='', scan=''):
     default('flagdata')
@@ -210,7 +208,7 @@ def FlagCal(caltable, sigma = 5, cycles = 3):
     elif 'FPARAM' in tb.colnames():
         pars=tb.getcol('FPARAM')
     else:
-        print "WARNING: cannot flag "+caltable+". Unknown type."
+        logging.error("Cannot flag "+caltable+". Unknown type.")
         return
     flags=tb.getcol('FLAG')
     ants=tb.getcol('ANTENNA1')
@@ -225,7 +223,7 @@ def FlagCal(caltable, sigma = 5, cycles = 3):
             flags[:,:, np.where( ants == ant ) ] = flagant
     tb.putcol('FLAG', flags)
     totflag_after = sum(flags.flatten())
-    print caltable,": Flagged", totflag_after-totflag_before, "points out of", len(flags.flatten()) ,"."
+    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))".")
     tb.close()
 
 def FlagBLcal(caltable, sigma = 5):
@@ -240,7 +238,7 @@ def FlagBLcal(caltable, sigma = 5):
     flgs[ np.abs( np.angle(cpar) - np.mean(np.angle(cpar[good])) ) > sigma * np.std( np.angle(cpar[good]) ) ] = True
     tb.putcol('FLAG', flgs)
     totflag_after = sum(flgs.flatten())
-    print "BLcal: Flagged", totflag_after-totflag_before, "points out of", len(flgs.flatten()) ,"."
+    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))".")
     tb.close()
 
 def getMaxAmp(caltable):
@@ -365,6 +363,7 @@ def plotBPCal(calt, amp=False, phase=False):
                 plotsymbol='o',plotcolor='blue',markersize=5.0,fontsize=10.0,showgui=False,figfile=filename)
 
 
+# TODO
 def makemask(imagename):
     """Convert the MS to fits (pyrap not working in some environments)
     use pybdsm to do source extraction
@@ -377,8 +376,6 @@ def correctPB(imgname, freq=0, phaseCentre=None):
     freq: force the observing frequency
     phaseCentre: [ra,dec] in deg of the pointing direction
     """
-    print "Correcting for primary beam."
-
     import numpy as np
     img = ia.open(imgname)
     cs = ia.coordsys()
@@ -386,7 +383,7 @@ def correctPB(imgname, freq=0, phaseCentre=None):
 
     # find the correct freq
     freq = min([153,235,325,610,1400], key=lambda x:abs(x-freq/1.e6))
-    print "Frequency is", freq, "MHz"
+    logging.info("Correcting PB - frequency is", freq, "MHz")
 
     # from http://gmrt.ncra.tifr.res.in/gmrt_hpage/Users/doc/manual/UsersManual/node27.html
     parm = {153: [-4.04,76.2,-68.8,22.03],
@@ -400,7 +397,7 @@ def correctPB(imgname, freq=0, phaseCentre=None):
         pixPhaseCentre = ia.topixel( () )['numeric'][0:2]
     else:
         pixPhaseCentre = ia.topixel( qa.quantity(str(phaseCentre[0])+'deg'), qa.quantity(str(phaseCentre[1])+'deg') )['numeric'][0:2]
-        print "Phase centre is at pix: ", pixPhaseCentre
+        logging.warning("Phase centre is at pix: "+str(pixPhaseCentre))
 
     # function to initialize the beam-array
     assert abs(cs.increment()['numeric'][0]) == abs(cs.increment()['numeric'][1])
@@ -694,8 +691,7 @@ def gmrt_flag(ms, flagfile):
 
     date = year + '/' + mon + '/' + day
 
-    print '\n Observing date is %s %s %s = %s' % (year, month, day,
-            date)
+    logging.debug('\n Observing date is %s %s %s = %s' % (year, month, day, date)
     for i in range(len(allLines)):
         init = (allLines[i])[0:3]
         if init == 'ANT':
@@ -715,7 +711,7 @@ def gmrt_flag(ms, flagfile):
                 date2 = year + '/' + mon + '/' + day2
                 trange = date + '/' + t0h + ':' + t0m + ':' + t0s \
                     + ' ~ ' + date2 + '/' + t1h + ':' + t1m + ':' + t1s
-            print 'Flagging antenna %s: timerange %s' % (ant, trange)
+            logging.debug('Flagging antenna %s: timerange %s' % (ant, trange))
             default('flagdata')
             flagdata(vis=ms, mode='manual', spw='', antenna=ant, timerange=trange, flagbackup=False, async=false)
     return True
@@ -911,8 +907,8 @@ class RefAntHeuristics:
                 try:
                     score[n] += self.flagScore[n]
                 except KeyError, e:
-                    print 'WARNING: antenna ' + str(e) \
-                        + ', is completely flagged and missing'
+                    logging.warning('Antenna ' + str(e) \
+                        + ', is completely flagged and missing')
 
         # Calculate the final score and return the list of ranked
         # reference antennas.  NB: The best antennas have the highest
@@ -923,6 +919,8 @@ class RefAntHeuristics:
         argSort = numpy.argsort(values)[::-1]
 
         refAnt = keys[argSort]
+
+        logging.debug("Refant: "+refAnt)
 
         return refAnt
 

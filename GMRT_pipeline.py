@@ -235,7 +235,6 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
     
             refAntObj = RefAntHeuristics(vis=active_ms, field=s.f, geometry=True, flagging=True)
             refAnt = refAntObj.calculate()[0]
-            logging.debug("Refant: " + refAnt)
         
             # gaincal on a narrow set of chan for BP and flagging
             if step == 'cycle1': calmode='ap'
@@ -356,21 +355,18 @@ def step_calib(active_ms, freq, minBL_for_cal):
     
     for s in sources:
 
-        if os.path.exists('cal/'+s.name):
-            os.system('rm -r cal/'+s.name)
+        check_rm('cal/'+s.name)
         os.makedirs('cal/'+s.name)
-        if os.path.exists('plots/'+s.name):
-            os.system('rm -r plots/'+s.name)
+        check_rm('plots/'+s.name)
         os.makedirs('plots/'+s.name)
 
         n_cycles = 3
         for cycle in xrange(n_cycles):
     
-            print "INFO: starting CALIB cycle "+str(cycle)
+            logging.info("Start CALIB cycle: "+str(cycle))
     
             refAntObj = RefAntHeuristics(vis=active_ms, field=s.f, geometry=True, flagging=True)
             refAnt = refAntObj.calculate()[0]
-            print "Refant: " + refAnt
             
             gaintables=['cal/flux_cal'+str(s.f)+'/final.B']
             interp=['nearest']
@@ -424,7 +420,7 @@ def step_calib(active_ms, freq, minBL_for_cal):
                 default('fluxscale')
                 myscale = fluxscale(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.Ga',\
                 	fluxtable='cal/'+s.name+'/gain'+str(cycle)+'.Ga_fluxscale', reference=s.f, transfer=s.g)
-                print "INFO: Rescaled gaincal sol with scale = ", myscale
+                logging.debug("Rescaled gaincal sol with scale = ", myscale)
     
                 plotGainCal('cal/'+s.name+'/gain'+str(cycle)+'.Ga_fluxscale', amp=True)
                 gaintables.append('cal/'+s.name+'/gain'+str(cycle)+'.Ga_fluxscale')
@@ -481,14 +477,14 @@ def step_calib(active_ms, freq, minBL_for_cal):
 # SelfCal
 
 def step_selfcal(active_ms, freq, minBL_for_cal):    
-    print "### SELFCAL"
+    logging.info("### SELFCAL")
 
     if freq > 600e6 and freq < 650e6: width = 16
     if freq > 300e6 and freq < 350e6: width = 8
     if freq > 200e6 and freq < 300e6: width = 8
     # renormalize if chans were not 512, force int to prevent bug in split() if width is a numpy.int64
     width = int(width / (512/sum(n_chan)))
-    print "INFO: average with width="+str(width)
+    logging.info("Average with width="+str(width))
    
     for s in sources:
 
@@ -510,7 +506,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
     
         for cycle in xrange(5):
      
-            print "INFO: starting SELFCAL cycle "+str(cycle)
+            logging.info("Start SELFCAL cycle: "+str(cycle))
             ts = str(s.expnoise*10*(5-cycle))+' Jy' # expected noise this cycle
 
             parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/self'+str(cycle), 'gridmode':'widefield', 'wprojplanes':512,\
@@ -528,7 +524,6 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             # recalibrating    
             refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
             refAnt = refAntObj.calculate()[0]
-            print "INFO: Refant: " + refAnt
 
             # Gaincal - phases
             if cycle==0: solint='600s'
@@ -606,14 +601,13 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
 # Peeling
     
 def step_peeling(): 
-    print "### PEELING"
+    logging.info("### PEELING")
 
     for s in sources:
         os.system('rm -r img/'+s.name+'/peel*')
         modelforpeel = 'img/'+s.name+'/final-masked.model'
         refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
         refAnt = refAntObj.calculate()[0]
-        print "INFO: Refant: " + refAnt
 
         for i, sourcetopeel in enumerate(s.peel):
 
@@ -631,7 +625,7 @@ def step_peeling():
 # Subtract point sources
     
 def step_subtract():
-    print "### SUBTRACTING"
+    logging.info("### SUBTRACTING")
 
     for s in sources:
         if os.path.exists(s.ms+'-sub'): os.system('rm -r '+s.ms+'-sub')
@@ -654,7 +648,7 @@ def step_subtract():
 #######################################
 # Final clean
 def step_lowresclean():
-    print "### LOW RESOLUTION CLEANING"
+    logging.info("### LOW RESOLUTION CLEANING")
 
     for s in sources:
         os.system('rm -r img/'+s.name+'/lowres*')

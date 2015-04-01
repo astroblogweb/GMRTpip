@@ -133,7 +133,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     if type(modelimg) is str: modelimg = [modelimg]
 
     # subtract all other sources
-    print "Subtract all sources in the field..."
+    logging.info("PEEL: Subtract all sources in the field...")
     if os.path.exists(active_ms+'-peel1'):
         os.system('rm -r '+active_ms+'-peel1')
     syscommand = "cp -r "+active_ms+' '+active_ms+'-peel1'
@@ -156,7 +156,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
 
     # peel
-    print "Start peeling..."
+    logging.info("PEEL: Start peeling...")
     if os.path.exists(active_ms.replace('peel1','peel2')):
         os.system('rm -r '+active_ms.replace('peel1','peel2'))
     default('split')
@@ -170,7 +170,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     modelimg_reg = extrModel(modelimg, region, compl=False)
     default('ftw')
     ftw(vis=active_ms, model=modelimg_reg, nterms=len(modelimg_reg), wprojplanes=wprojplanes, usescratch=True)
-    print "First round of calibration..."
+    logging.info("PEEL: First round of calibration...")
     default('gaincal')
     gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     default('gaincal')
@@ -194,7 +194,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
         mask=region)
 
     # selfcal
-    print "Second round of calibration..."
+    logging.info("PEEL: Second round of calibration...")
     default('gaincal')
     gaincal(vis=active_ms, caltable='cal/peel2.Gp', solint='int', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     default('gaincal')
@@ -218,7 +218,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     subtract(active_ms, ['img/peel2.model.tt0','img/peel2.model.tt1'], wprojplanes=wprojplanes)
 
     # make image of that part of the sky
-    print "Make image of peeled region"
+    logging.info("PEEL: Make image of peeled region")
     modelimg_reg_compl2 = extrModel(modelimg, region, compl=True, extend=[directionRA,directionDEC])
     subtract(active_ms.replace('peel2','peel1'), modelimg_reg_compl, wprojplanes=wprojplanes)
     active_ms_reg = active_ms.replace('peel2','peelr')
@@ -245,7 +245,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     invcaltabp = invertTable('cal/peel2.Gp')
 
     # put sources back
-    print "Recreating dataset..."
+    logging.info("PEEL: Recreating dataset...")
     if os.path.exists(active_ms.replace('peel2','peeled')):
         os.system('rm -r '+active_ms.replace('peel2','peeled'))
     default('split')
