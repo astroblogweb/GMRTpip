@@ -37,31 +37,28 @@
 # pipeline dir
 #pipdir = '/home/hslxrsrv3/stsf309/GMRTpipeline'
 
-import os
-import sys
+import os, sys
 import itertools
 import datetime
 import numpy as np
 execfile('GMRT_pipeline_conf.py')
 execfile(pipdir+'/GMRT_pipeline_lib.py')
 execfile(pipdir+'/GMRT_peeling.py')
+set_logger()
 
-active_ms = dataf.lower().replace('fits', 'ms')
+active_ms = dataf.replace('fits', 'ms').replace('FITS','ms')
 
 #######################################
 # prepare env
 
 def step_env():
-    print "### RESET ENVIRONMENT"
+    logging.info("### RESET ENVIRONMENT")
 
-    if os.path.exists('img'):
-        os.system('rm -rf img')
+    check_rm('img')
+    check_rm('cal')
+    check_rm('plots')
     os.makedirs('img')
-    if os.path.exists('cal'):
-        os.system('rm -rf cal')
     os.makedirs('cal')
-    if os.path.exists('plots'):
-        os.system('rm -rf plots')
     os.makedirs('plots')   
 
     
@@ -69,25 +66,25 @@ def step_env():
 # import & plots
 
 def step_import():
-    print "### IMPORT FILE AND FIRST PLTOS"
+    logging.info("### IMPORT FILE AND FIRST PLTOS")
 
     if not os.path.exists(active_ms):
         default('importgmrt')
         importgmrt(fitsfile=dataf, vis=active_ms)
-        print "INFO: Created " + active_ms + " measurementset"
+        logging.info("Created " + active_ms + " measurementset.")
     else:
-        print "WARNING: MS already present, skip importing"
+        logging.warning("MS already present, skip importing")
     
     # apply observation flags
     if flagf!='':
         gmrt_flag(active_ms, flagf)
     else:
-        print "WARNING: no flag pre-applied."
+        logging.warning("no flag pre-applied.")
     
     # Create listobs.txt for references
+    check_rm('listobs.txt')
     default('listobs')
-    if not os.path.isfile('listobs.txt'):
-        listobs(vis=active_ms, verbose=True, listfile='listobs.txt')
+    listobs(vis=active_ms, verbose=True, listfile='listobs.txt')
     
     # plot ants
     default('plotants')
@@ -103,7 +100,7 @@ def step_import():
 # set important variables
 
 def step_setvars(active_ms):
-    print "### SET VARIABLES"
+    logging.info("### SET VARIABLES")
 
     # find number of channels
     tb.open(active_ms+'/SPECTRAL_WINDOW')
@@ -124,7 +121,6 @@ def step_setvars(active_ms):
     sources = []
     for name, data in obs.items():
         sources.append(Source(name, data))
-    #sources = list(set(itertools.chain.from_iterable([o['sou'][0].split(',') for o in obs])))
 
     return freq, minBL_for_cal, sources, n_chan
 
@@ -133,11 +129,11 @@ def step_setvars(active_ms):
 # Pre-flag: remove first chan, quack, bad ant and bad time
     
 def step_preflag(active_ms, freq, n_chan):
-    print "### FIRST FLAGGING"
+    logging.info("### FIRST FLAGGING")
     
     # report initial statistics
     statsflags = getStatsflag(active_ms)
-    print "INFO: Initial flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("Initial flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
     
     if len(n_chan) == 1 and n_chan[0] == 512:
         if freq > 600e6 and freq < 650e6: spw='0:0~10,0:502~511' # 610 MHz
@@ -161,14 +157,13 @@ def step_preflag(active_ms, freq, n_chan):
     
     if badranges != {}:
         for badant in badranges:
-            print "* Flagging :", badant, " - time: ", badranges[badant]
+            logging.debug("Flagging :", badant, " - time: ", badranges[badant])
             default('flagdata')
             flagdata(vis=active_ms, mode='manualflag', antenna=badant,\
             	timerange=badranges[badant], flagbackup=False)
     
     # quack
     default('flagdata')
-    # aoflagger should solve this
     flagdata(vis=active_ms, mode='quack', quackinterval=1, quackmode='beg', action='apply', flagbackup=False)
     
     # flag zeros
@@ -178,77 +173,75 @@ def step_preflag(active_ms, freq, n_chan):
     
     # flag statistics after pre-flag
     statsflags = getStatsflag(active_ms)
-    print "INFO: After pre-flagging flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("After pre-flagging flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
     
     # save flag status
     default('flagmanager')
     flagmanager(vis=active_ms, mode='save', versionname='AfterFirstFlagging', comment=str(datetime.datetime.now()))
-    print "INFO: Saved flags in AfterFirstFlagging"
     
     #######################################
     # Manual checks
     #plotms(vis=active_ms, xaxis='time', yaxis='amp', ydatacolumn='data', avgchannel='512', iteraxis='antenna', coloraxis='baseline')
     #plotms(vis=active_ms, xaxis='channel', yaxis='amp', ydatacolumn='data', avgtime='3600', iteraxis='antenna', coloraxis='baseline')
+
     
 #######################################
 # Set models
    
 def step_setjy(active_ms): 
-    print "### SETJY"
+    logging.info("### SETJY")
     
     done = []
     for s in sources:
         if s.f in done: continue
         # check if there's a specific model
         if s.fmodel != '':
-            print "INFO: using model "+s.fmodel+" for fux_cal "+s.f
+            logging.info("Using model "+s.fmodel+" for fux_cal "+s.f)
             default('ft')
             ft(vis=active_ms, field=s.f, complist=s.fmodel, usescratch=True)
         else:
-            print "INFO: using default model for fux_cal "+s.f
+            logging.info("Using default model for fux_cal "+s.f)
             default('setjy')
             setjy(vis=active_ms, field=s.f, standard='Perley-Butler 2010', usescratch=True, scalebychan=True)
         done.append(s.f)
-    
+
     
 #######################################
 # Bandpass
 
 def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):    
-    print "### BANDPASS"
+    logging.info("### BANDPASS")
     
     done = []
     for s in sources:
         if s.f in done: continue
 
-        if os.path.exists('cal/flux_cal'+str(s.f)):
-            os.system('rm -r cal/flux_cal'+str(s.f))
+        check_rm('cal/flux_cal'+str(s.f))
         os.makedirs('cal/flux_cal'+str(s.f))
-        if os.path.exists('plots/flux_cal'+str(s.f)):
-            os.system('rm -r plots/flux_cal'+str(s.f))
+        check_rm('plots/flux_cal'+str(s.f))
         os.makedirs('plots/flux_cal'+str(s.f))
+
+        if len(n_chan) == 1 and n_chan[0] == 512: initspw = '0:240~260'
+        elif len(n_chan) == 1 and n_chan[0] == 256: initspw = '0:120~130'
+        elif len(n_chan) == 1 and n_chan[0] == 128: initspw = '0:70~80'
+        elif len(n_chan) == 2 and n_chan[0] == 128 and n_chan[1] == 128: initspw = '0:70~80, 1:70~80'
 
         for step in ['cycle1','cycle2','final']:
 
-            print "INFO: staring bandpass step: "+step
+            logging.info("Start bandpass step: "+step)
 
             gaintables=[]
             inerp=[]
     
             refAntObj = RefAntHeuristics(vis=active_ms, field=s.f, geometry=True, flagging=True)
             refAnt = refAntObj.calculate()[0]
-            print "Refant: " + refAnt
+            logging.debug("Refant: " + refAnt)
         
             # gaincal on a narrow set of chan for BP and flagging
             if step == 'cycle1': calmode='ap'
             if step == 'cycle2' or step == 'final': calmode='p'
 
-            if len(n_chan) == 1 and n_chan[0] == 512: initspw = '0:240~260'
-            elif len(n_chan) == 1 and n_chan[0] == 256: initspw = '0:120~130'
-            elif len(n_chan) == 1 and n_chan[0] == 128: initspw = '0:70~80'
-            elif len(n_chan) == 2 and n_chan[0] == 128 and n_chan[1] == 128: initspw = '0:70~80, 1:70~80'
-
-            print "INFO: phase calibration"
+            logging.info("Phase calibration")
             default('gaincal')
             gaincal(vis=active_ms, caltable='cal/flux_cal'+str(s.f)+'/'+step+'.G', field=s.f,\
             	selectdata=True, uvrange='>50m', scan=s.fscan, spw=initspw,\
@@ -262,7 +255,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             interp.append('linear')
     
             # init bandpass correction
-            print "INFO: bandpass calibration"
+            logging.info("Bandpass calibration 1")
             if freq < 500e6:
                 minsnr=2.0
             else:
@@ -273,7 +266,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             	minblperant=minBL_for_cal, minsnr=minsnr, solnorm=True, bandtype='B', gaintable=gaintables, interp=interp)
 
             # find leftover time-dependent delays
-            print "INFO: delay calibration"
+            logging.info("Delay calibration")
             default('gaincal')
             gaincal(vis=active_ms, caltable='cal/flux_cal'+str(s.f)+'/'+step+'.K', field=s.f, selectdata=True,\
                 uvrange='>100m', scan=s.fscan, solint='int',combine='', refant=refAnt, interp=interp+['nearest'],\
@@ -284,7 +277,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             interp.append('linear')
 
             # recalculate BP taking delays into account
-            print "INFO: bandpass calibration 2"
+            logging.info("Bandpass calibration 2")
             default('bandpass')
             bandpass(vis=active_ms, caltable='cal/flux_cal'+str(s.f)+'/'+step+'.B', field=s.f, selectdata=True,\
             	uvrange='>100m', scan=s.fscan, solint='inf', combine='scan,field', refant=refAnt, interp=interp,\
@@ -293,19 +286,19 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             # Plot bandpass
             plotBPCal('cal/flux_cal'+str(s.f)+'/'+step+'.B', amp=True, phase=True)
 
-            print "INFO: apply bandpass"
+            logging.info"Apply bandpass")
             default('applycal')
             applycal(vis=active_ms, selectdata=True, field=s.f, scan=s.fscan,\
             	gaintable=['cal/flux_cal'+str(s.f)+'/'+step+'.B'], calwt=False, flagbackup=False, interp=['nearest'])
             
             # flag statistics after applycal
             statsflags = getStatsflag(active_ms, field=s.f, scan=s.fscan)
-            print "INFO: bandpass cycle \""+step+"\" flag percentage after applycal: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+            logging.info("Bandpass cycle \""+step+"\" flag percentage after applycal: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
          
             # Run an rflag after the first and second cycle
             # to remove most obvious RFI
             if step != 'final':
-                print "INFO: flagdata"
+                logging.info("Flagdata")
                 default('flagdata')
                 flagdata(vis=active_ms, mode='rflag', field=s.f, scan=s.fscan,\
                     	ntime='scan', combinescans=False, datacolumn='corrected', winsize=3,\
@@ -315,7 +308,10 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
                 
                 # flag statistics after flagging
                 statsflags = getStatsflag(active_ms, field=s.f, scan=s.fscan)
-                print "INFO: bandpass cycle \""+step+"\" flag percentage after flagging: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+                logging.info("Bandpass cycle \""+step+"\" flag percentage after flagging: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
+
+                # finally clip on residuals
+                clipresidual(active_ms, field=s.f, scan=s.fscan)
 
         # end of 3 bandpass cycles
         done.append(s.f)
@@ -323,7 +319,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
 
     # flag statistics after flagging
     statsflags = getStatsflag(active_ms)
-    print "INFO: Before bandpass applycal total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("Before bandpass applycal total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
 
     for s in sources:
         # apply bandpass to gain_cal
@@ -337,7 +333,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
 
     # flag statistics after flagging
     statsflags = getStatsflag(active_ms)
-    print "INFO: Before flagging total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("Before flagging total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
 
     # run the final flagger
     default('flagdata')
@@ -349,14 +345,14 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
     
     # flag statistics after flagging
     statsflags = getStatsflag(active_ms)
-    print "INFO: After flagging total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    logging.info("After flagging total flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%")
  
 
 #######################################
 # Calib
     
 def step_calib(active_ms, freq, minBL_for_cal):
-    print "### CALIB"
+    logging.info("### CALIB")
     
     for s in sources:
 
@@ -438,15 +434,15 @@ def step_calib(active_ms, freq, minBL_for_cal):
                 gaintables.append('cal/'+s.name+'/gain'+str(cycle)+'.Ga')
                 interp.append('linear')
      
-            # BLcal
-            if s.f in s.fmodel:
-                print "WARNING: flux_cal has a model and its being used for BLCAL, model must be superprecise!" 
-            blcal(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.BLap',  field=s.f,\
-                scan=s.fscan, combine='', solint='inf', calmode='ap', gaintable=gaintables, solnorm=True)
-            FlagBLcal('cal/'+s.name+'/gain'+str(cycle)+'.BLap', sigma = 3)
-            plotGainCal('cal/'+s.name+'/gain'+str(cycle)+'.BLap', amp=True, phase=True, BL=True)
-            gaintables.append('cal/'+s.name+'/gain'+str(cycle)+'.BLap')
-            interp.append('nearest')
+            # BLcal TODO: do BLcal on the fluxcal?
+            #if s.f in s.fmodel:
+            #    print "WARNING: flux_cal has a model and its being used for BLCAL, model must be superprecise!" 
+            #blcal(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.BLap',  field=s.f,\
+            #    scan=s.fscan, combine='', solint='inf', calmode='ap', gaintable=gaintables, solnorm=True)
+            #FlagBLcal('cal/'+s.name+'/gain'+str(cycle)+'.BLap', sigma = 3)
+            #plotGainCal('cal/'+s.name+'/gain'+str(cycle)+'.BLap', amp=True, phase=True, BL=True)
+            #gaintables.append('cal/'+s.name+'/gain'+str(cycle)+'.BLap')
+            #interp.append('nearest')
             
             # clip of residuals
             if cycle != n_cycles-1:
@@ -652,7 +648,7 @@ def step_subtract():
         cleanmaskclean(parms, s)
 
         # subtract 
-        subtract(s.ms, 'img/'+s.name+'/hires-masked.model', region=s.sub, wprojplanes=512)
+        subtract(s.ms, ['img/'+s.name+'/hires-masked.model'], region=s.sub, wprojplanes=512)
 
 
 #######################################
@@ -674,13 +670,13 @@ def step_lowresclean():
  
 
 # steps to execute
-#step_env()
-#step_import()
+step_env()
+step_import()
 freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not commment this out!
-#step_preflag(active_ms, freq, n_chan)
-#step_setjy(active_ms)
-#step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
-#step_calib(active_ms, freq, minBL_for_cal)
+step_preflag(active_ms, freq, n_chan)
+step_setjy(active_ms)
+step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
+step_calib(active_ms, freq, minBL_for_cal)
 step_selfcal(active_ms, freq, minBL_for_cal)
 step_peeling()
 step_subtract()

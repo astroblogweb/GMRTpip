@@ -2,6 +2,62 @@
 # -*- coding: utf-8 -*-
 
 # Library for GMRT pipeline
+import logging
+
+def check_rm(regexp):
+    """
+    Check if file exists and remove it
+    Handle reg exp of glob and spaces
+    """
+    import os, glob
+    filenames = regexp.split(' ')
+    for filename in filenames:
+        # glob is used to check if file exists
+        for f in glob.glob(filename):
+            os.system('rm -r '+f)
+
+def add_coloring_to_emit_ansi(fn):
+    # add methods we need to the class
+    def new(*args):
+        levelno = args[1].levelno
+        if(levelno>=50):
+            color = '\x1b[31m' # red
+        elif(levelno>=40):
+            color = '\x1b[31m' # red
+        elif(levelno>=30):
+            color = '\x1b[33m' # yellow
+        elif(levelno>=20):
+            color = '\x1b[32m' # green 
+        elif(levelno>=10):
+            color = '\x1b[35m' # pink
+        else:
+            color = '\x1b[0m' # normal
+        args[1].msg = color + args[1].msg +  '\x1b[0m'  # normal
+        #print "after"
+        return fn(*args)
+    return new
+
+def set_logger():
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    # get rid of all other loggers imported by modules
+    for l in logger.handlers: l.setLevel('ERROR')
+    logging.StreamHandler.emit = add_coloring_to_emit_ansi(logging.StreamHandler.emit)
+    # create file handler which logs even debug messages
+    check_rm('pipeline.logging')
+    fh = logging.FileHandler('pipeline.logging')
+    fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
 
 class Source(object):
     def __init__(self, name, data):
@@ -87,28 +143,44 @@ def clipresidual(active_ms, field='', scan=''):
     default('uvsub')
     uvsub(vis=active_ms)
 
+    # flag statistics before flagging
+    statsflags = getStatsflag(active_ms, field=field, scan=scan)
+    print "INFO: Before BL flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+
     print "INFO: removing baselines with high residuals"
+    import itertools
     ms.open(active_ms, nomodify=False)
-    ms.selectinit(datadescid=0)
-    ms.msselect({'field':field, 'scan':scan})
-    # TODO: ask for residual_amplitude and split this function?
-    d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2'])
-    # cycle on corr
-    for corr in xrange(len(d['corrected_amplitude'])):
-        # cycle on channels
-        for chan in xrange(len(d['corrected_amplitude'][corr])):
-            amp_chan = d['corrected_amplitude'][corr][chan][~d['flag'][corr][chan]] # get unflagged data
-            ant1_chan = d['antenna1'][~d['flag'][corr][chan]]
-            ant2_chan = d['antenna2'][~d['flag'][corr][chan]]
-            med = np.median(amp_chan)
-            for ant1 in set(ant1_chan):
-                for ant2 in set(ant2_chan):
-                    bl_med = np.median( amp_chan[ (ant1_chan==ant1) & (ant2_chan==ant2) ] )
-                    # if BL residuals are 3 times bigger than med, flag
-                    if bl_med > 2*med:
-                        print "Flagging BL: ",ant1, ant2, " - chan:", chan
-                        d['flag'][corr][chan][ (d['antenna1']==ant1) & (d['antenna2']==ant2) ] = True
-    ms.putdata({'flag':d['flag']})
+    metadata = ms.metadata()
+    # datadesc ids are usually one per spw, but ms can also be splitted in corr
+    for datadescid in metadata.datadescids():
+        print "DEBUG: working on datadesc: "+str(datadescid)
+        ms.msselect({'field':field, 'scan':scan})
+        # TODO: ask for residual_amplitude and split this function?
+        d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2','axis_info'], ifraxis=True)
+        # cycle on corr
+        for corr in xrange(len(d['corrected_amplitude'])):
+            print "DEBUG: working on corr: "+d['axis_info']['corr_axis'][corr]
+            # cycle on channels
+            for chan in xrange(len(d['corrected_amplitude'][corr])):
+                print "DEBUG: working on chan: "+str(chan)
+                meds = []
+                # cycle on bl
+                for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
+                    #print "DEBUG: working on bl: "+d['axis_info']['ifr_axis']['ifr_name'][bl]
+                    amp = d['corrected_amplitude'][corr][chan][bl][~d['flag'][corr][chan][bl]] # get unflagged data
+                    if amp != []: meds.append(np.median( amp[(amp == amp)] ))
+                med = np.mean(meds)
+                rms = np.std(meds)
+                for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
+                    amp = d['corrected_amplitude'][corr][chan][bl][~d['flag'][corr][chan][bl]] # get unflagged data
+                    if amp != []: 
+                        bl_med = np.median( amp[(amp == amp)] )
+                        # if BL residuals are 3 times out of med rms, flag
+                        if abs(bl_med - med) > 3*rms:
+                            print "Flagging corr: ", d['axis_info']['corr_axis'][corr]," - chan:", chan," - BL: ",d['axis_info']['ifr_axis']['ifr_name'][bl]
+                            d['flag'][corr][chan][bl] = True
+        # TODO: extend flags for BL which appears often
+        ms.putdata({'flag':d['flag']})
     ms.close()
 
     # flag statistics before flagging
@@ -120,7 +192,7 @@ def clipresidual(active_ms, field='', scan=''):
 
     # flag statistics after flagging
     statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: After tfcrop flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    print "INFO: After all clipping flag: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
 
 def getStatsflag(ms, field='', scan=''):
     default('flagdata')
@@ -129,7 +201,7 @@ def getStatsflag(ms, field='', scan=''):
     return statsflags
 
 def FlagCal(caltable, sigma = 5, cycles = 3):
-    """Flag delays outside n sigmas
+    """Flag sol outside n sigmas
     Better high number of cycles (3) at high sigma (5)
     """
     tb.open(caltable, nomodify=False)
