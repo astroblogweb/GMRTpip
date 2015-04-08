@@ -2,6 +2,61 @@
 # -*- coding: utf-8 -*-
 
 # Library for GMRT pipeline
+import logging
+
+def check_rm(regexp):
+    """
+    Check if file exists and remove it
+    Handle reg exp of glob and spaces
+    """
+    import os, glob
+    filenames = regexp.split(' ')
+    for filename in filenames:
+        # glob is used to check if file exists
+        for f in glob.glob(filename):
+            os.system('rm -r '+f)
+
+def add_coloring_to_emit_ansi(fn):
+    # add methods we need to the class
+    def new(*args):
+        levelno = args[1].levelno
+        if(levelno>=50):
+            color = '\x1b[31m' # red
+        elif(levelno>=40):
+            color = '\x1b[31m' # red
+        elif(levelno>=30):
+            color = '\x1b[33m' # yellow
+        elif(levelno>=20):
+            color = '\x1b[32m' # green 
+        elif(levelno>=10):
+            color = '\x1b[35m' # pink
+        else:
+            color = '\x1b[0m' # normal
+        args[1].msg = color + args[1].msg +  '\x1b[0m'  # normal
+        return fn(*args)
+    return new
+
+def set_logger():
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    # get rid of all other loggers imported by modules
+    for l in logger.handlers: l.setLevel('ERROR')
+    logging.StreamHandler.emit = add_coloring_to_emit_ansi(logging.StreamHandler.emit)
+    # create file handler which logs even debug messages
+    check_rm('pipeline.logging')
+    fh = logging.FileHandler('pipeline.logging')
+    fh.setLevel(logging.DEBUG)
+    # create console handler with a higher log level
+    ch = logging.StreamHandler()
+    ch.setLevel(logging.DEBUG)
+    # create formatter and add it to the handlers
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    fh.setFormatter(formatter)
+    ch.setFormatter(formatter)
+    # add the handlers to the logger
+    logger.addHandler(fh)
+    logger.addHandler(ch)
+    return logger
 
 class Source(object):
     def __init__(self, name, data):
@@ -64,9 +119,9 @@ def cleanmaskclean(parms, s):
 
     # make mask and re-do image
     if s.extended:
-        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4 --atrous_do')
+        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3 --atrous_do')
     else:
-        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=7 --threshisl=4')
+        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3')
 
     if s.mask_faint != '':
         parms['mask']=[parms['imagename']+'.newmask',s.mask_faint]
@@ -74,6 +129,7 @@ def cleanmaskclean(parms, s):
         parms['mask']=parms['imagename']+'.newmask'
 
     parms['imagename']=parms['imagename']+'-masked'
+    parms['niter']=parms['niter']/3 # reduce number if clean iterations in masked mode
     default('clean')
     clean(**parms)
    
@@ -82,32 +138,88 @@ def clipresidual(active_ms, field='', scan=''):
     and clip at 5 times the total flux of the model
     NOTE: the ms CORRECTED_DATA will be corrupted!
     """
-    # flag statistics before flagging
-    statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: Before tfcrop flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
 
     default('uvsub')
     uvsub(vis=active_ms)
+
+    # flag statistics before flagging
+    statsFlag(active_ms, field=field, scan=scan, note='Before BL flag')
+
+    logging.debug("Removing baselines with high residuals:")
+    import itertools
+    ms.open(active_ms, nomodify=False)
+    metadata = ms.metadata()
+    # datadesc ids are usually one per spw, but ms can also be splitted in corr
+    for datadescid in metadata.datadescids():
+        logging.debug("Working on datadesc: "+str(datadescid))
+        ms.msselect({'field':field, 'scan':scan})
+        # TODO: ask for residual_amplitude and split this function?
+        d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2','axis_info'], ifraxis=True)
+        # cycle on corr
+        for corr in xrange(len(d['corrected_amplitude'])):
+            logging.debug("Working on corr: "+d['axis_info']['corr_axis'][corr])
+            # cycle on channels
+            for chan in xrange(len(d['corrected_amplitude'][corr])):
+                #logging.debug("Working on chan: "+str(chan))
+                meds = []
+                # cycle on bl
+                for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
+                    amp = d['corrected_amplitude'][corr][chan][bl][~d['flag'][corr][chan][bl]] # get unflagged data
+                    if amp != []: meds.append(np.median( amp[(amp == amp)] ))
+                med = np.mean(meds)
+                rms = np.std(meds)
+                for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
+                    amp = d['corrected_amplitude'][corr][chan][bl][~d['flag'][corr][chan][bl]] # get unflagged data
+                    if amp != []: 
+                        bl_med = np.median( amp[(amp == amp)] )
+                        # if BL residuals are 3 times out of med rms, flag
+                        if abs(bl_med - med) > 3*rms:
+                            logging.debug("Flagging corr: ", d['axis_info']['corr_axis'][corr]," - chan:", chan," - BL: ",d['axis_info']['ifr_axis']['ifr_name'][bl])
+                            d['flag'][corr][chan][bl] = True
+        # TODO: extend flags for BL which appears often
+        ms.putdata({'flag':d['flag']})
+    ms.close()
+
+    # flag statistics before flagging
+    statsFlag(active_ms, field=field, scan=scan, note='Before tfcrop')
+
     default('flagdata')
     flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
 
     # flag statistics after flagging
-    statsflags = getStatsflag(active_ms, field=field, scan=scan)
-    print "INFO: After tfcrop flag percentage: " + str(statsflags['flagged']/statsflags['total']*100.) + "%"
+    statsFlag(active_ms, field=field, scan=scan, note='After all clipping')
 
 
-def getStatsflag(ms, field='', scan=''):
+def statsFlag(active_ms, field='', scan='', note=''):
     default('flagdata')
-    statsflags = flagdata(vis=ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
-    clearstat()
-    return statsflags
+    t = flagdata(vis=active_ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
+    #clearstat()
+    log = 'Flag statistics ('+note+'):'
+    log += '\nAntenna, '
+    for k in sorted(t['antenna']):
+        log += k +': %d.2%% - ' % (100.*t['antenna'][k]['flagged']/t['antenna'][k]['total'])
+    log += '\nCorrelation, '
+    for k, v in t['correlation'].items():
+        log += k +': %d.2%% - ' % (100.*v['flagged']/v['total'])
+    log += '\nSpw, '
+    for k, v in t['spw'].items():
+        log += k +': %d.2%% - ' % (100.*v['flagged']/v['total'])
+    log += '\nTotal: %d.2%%' % (100.*t['flagged']/t['total'])
+    logging.debug(log.replace(' - \n','\n'))
 
-def FlagKcal(caltable, sigma = 5, cycles = 3):
-    """Flag delays outside n sigmas
+
+def FlagCal(caltable, sigma = 5, cycles = 3):
+    """Flag sol outside n sigmas
     Better high number of cycles (3) at high sigma (5)
     """
     tb.open(caltable, nomodify=False)
-    pars=tb.getcol('FPARAM')
+    if 'CPARAM' in tb.colnames():
+        pars=tb.getcol('CPARAM')
+    elif 'FPARAM' in tb.colnames():
+        pars=tb.getcol('FPARAM')
+    else:
+        logging.error("Cannot flag "+caltable+". Unknown type.")
+        return
     flags=tb.getcol('FLAG')
     ants=tb.getcol('ANTENNA1')
     totflag_before = sum(flags.flatten())
@@ -121,7 +233,7 @@ def FlagKcal(caltable, sigma = 5, cycles = 3):
             flags[:,:, np.where( ants == ant ) ] = flagant
     tb.putcol('FLAG', flags)
     totflag_after = sum(flags.flatten())
-    print "Kcal: Flagged", totflag_after-totflag_before, "points out of", len(flags.flatten()) ,"."
+    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))".")
     tb.close()
 
 def FlagBLcal(caltable, sigma = 5):
@@ -136,7 +248,7 @@ def FlagBLcal(caltable, sigma = 5):
     flgs[ np.abs( np.angle(cpar) - np.mean(np.angle(cpar[good])) ) > sigma * np.std( np.angle(cpar[good]) ) ] = True
     tb.putcol('FLAG', flgs)
     totflag_after = sum(flgs.flatten())
-    print "BLcal: Flagged", totflag_after-totflag_before, "points out of", len(flgs.flatten()) ,"."
+    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))".")
     tb.close()
 
 def getMaxAmp(caltable):
@@ -240,7 +352,7 @@ def plotBPCal(calt, amp=False, phase=False):
 
     if amp == True:
         for ii in range(nplots):
-            filename='plots/'+calt.replace('cal/','')+'a_'+str(ii)+'.png'
+            filename=calt.replace('cal/','plots/')+'a_'+str(ii)+'.png'
             syscommand='rm -rf '+filename
             os.system(syscommand)
             antPlot=str(ii*3)+'~'+str(ii*3+2)
@@ -251,7 +363,7 @@ def plotBPCal(calt, amp=False, phase=False):
 
     if phase == True:
         for ii in range(nplots):
-            filename='plots/'+calt.replace('cal/','')+'p_'+str(ii)+'.png'
+            filename=calt.replace('cal/','plots/')+'p_'+str(ii)+'.png'
             syscommand='rm -rf '+filename
             os.system(syscommand)
             antPlot=str(ii*3)+'~'+str(ii*3+2)
@@ -261,6 +373,7 @@ def plotBPCal(calt, amp=False, phase=False):
                 plotsymbol='o',plotcolor='blue',markersize=5.0,fontsize=10.0,showgui=False,figfile=filename)
 
 
+# TODO
 def makemask(imagename):
     """Convert the MS to fits (pyrap not working in some environments)
     use pybdsm to do source extraction
@@ -273,8 +386,6 @@ def correctPB(imgname, freq=0, phaseCentre=None):
     freq: force the observing frequency
     phaseCentre: [ra,dec] in deg of the pointing direction
     """
-    print "Correcting for primary beam."
-
     import numpy as np
     img = ia.open(imgname)
     cs = ia.coordsys()
@@ -282,7 +393,7 @@ def correctPB(imgname, freq=0, phaseCentre=None):
 
     # find the correct freq
     freq = min([153,235,325,610,1400], key=lambda x:abs(x-freq/1.e6))
-    print "Frequency is", freq, "MHz"
+    logging.info("Correcting PB - frequency is", freq, "MHz")
 
     # from http://gmrt.ncra.tifr.res.in/gmrt_hpage/Users/doc/manual/UsersManual/node27.html
     parm = {153: [-4.04,76.2,-68.8,22.03],
@@ -296,7 +407,7 @@ def correctPB(imgname, freq=0, phaseCentre=None):
         pixPhaseCentre = ia.topixel( () )['numeric'][0:2]
     else:
         pixPhaseCentre = ia.topixel( qa.quantity(str(phaseCentre[0])+'deg'), qa.quantity(str(phaseCentre[1])+'deg') )['numeric'][0:2]
-        print "Phase centre is at pix: ", pixPhaseCentre
+        logging.warning("Phase centre is at pix: "+str(pixPhaseCentre))
 
     # function to initialize the beam-array
     assert abs(cs.increment()['numeric'][0]) == abs(cs.increment()['numeric'][1])
@@ -590,8 +701,7 @@ def gmrt_flag(ms, flagfile):
 
     date = year + '/' + mon + '/' + day
 
-    print '\n Observing date is %s %s %s = %s' % (year, month, day,
-            date)
+    logging.debug('\n Observing date is %s %s %s = %s' % (year, month, day, date)
     for i in range(len(allLines)):
         init = (allLines[i])[0:3]
         if init == 'ANT':
@@ -611,7 +721,7 @@ def gmrt_flag(ms, flagfile):
                 date2 = year + '/' + mon + '/' + day2
                 trange = date + '/' + t0h + ':' + t0m + ':' + t0s \
                     + ' ~ ' + date2 + '/' + t1h + ':' + t1m + ':' + t1s
-            print 'Flagging antenna %s: timerange %s' % (ant, trange)
+            logging.debug('Flagging antenna %s: timerange %s' % (ant, trange))
             default('flagdata')
             flagdata(vis=ms, mode='manual', spw='', antenna=ant, timerange=trange, flagbackup=False, async=false)
     return True
@@ -807,8 +917,8 @@ class RefAntHeuristics:
                 try:
                     score[n] += self.flagScore[n]
                 except KeyError, e:
-                    print 'WARNING: antenna ' + str(e) \
-                        + ', is completely flagged and missing'
+                    logging.warning('Antenna ' + str(e) \
+                        + ', is completely flagged and missing')
 
         # Calculate the final score and return the list of ranked
         # reference antennas.  NB: The best antennas have the highest
@@ -819,6 +929,8 @@ class RefAntHeuristics:
         argSort = numpy.argsort(values)[::-1]
 
         refAnt = keys[argSort]
+
+        logging.debug("Refant: "+refAnt)
 
         return refAnt
 

@@ -17,11 +17,18 @@
 
 import numpy as np
 
-def extrModel(modelimg, region, compl=False):
+def extrModel(modelimg, region, compl=False, extend=None):
     """Extract only the part described by the region file
     from one or more (nterms>1) model img
     """
     blankedmodelimg = []
+
+    # create a new region with a large ellipses i.e. "expand" the region
+    if extend != None:
+        os.system('cp '+region+' '+region.replace('.crtf','-ext.crtf'))
+        region = region.replace('.crtf','-ext.crtf')
+        with open(region, 'a') as f:
+            f.write('ellipse [['+extend[0]+', '+extend[1]+'], [900arcsec, 900arcsec], 90.00000000deg] coord=J2000, corr=[I], linewidth=1, linestyle=-, symsize=1, symthick=1, color=magenta, font=Ubuntu, fontsize=11, fontstyle=normal, usetex=false')
 
     for i, modelimgtt in enumerate(modelimg):
         if compl:
@@ -97,28 +104,6 @@ def findCentre(img):
     epoch = csys.referencecode()[np.where(np.array(csys.coordinatetype())=='Direction')[0]]
     return epoch, str(directionRA)+'rad', str(directionDEC)+'rad'
 
-#def ftw(active_ms, modelimg, wprojplanes=0):
-#    """ Do an ft() applying a w-projection
-#    active_ms: MS whose MODEL_DATA will be filled
-#    modelimg: .model image
-#    wprojplanes: number of w-projection planes, if 0 a direct ft() will be used (best for small field)
-#    """
-#    if wprojplanes == 0: ft(vis=active_ms, model=modelimg, usescratch=True)
-#    else:
-#        im.open(active_ms, usescratch=True)
-#        im.selectvis()
-#        im.defineimage()
-#        # set nterms
-#        if len(modelimg) > 1:
-#            ia.open(modelimg[0])
-#            icsys = ia.coordsys()
-#            ia.close()
-#            reffreqVal = icsys.referencevalue(type='spectral')['numeric'][0]
-#            # set nterms and ref-freq
-#            im.settaylorterms(ntaylorterms=len(modelimg),reffreq=reffreqVal)
-#        im.setoptions(ftmachine='wproject', wprojplanes=wprojplanes, padding=1.2)
-#        im.ft(model=modelimg)
-#        im.done() 
 
 def subtract(active_ms, modelimg, region='', wprojplanes=0):
     """General function to call the necessary steps to subtract point sources
@@ -148,7 +133,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     if type(modelimg) is str: modelimg = [modelimg]
 
     # subtract all other sources
-    print "Subtract all sources in the field..."
+    logging.info("PEEL: Subtract all sources in the field...")
     if os.path.exists(active_ms+'-peel1'):
         os.system('rm -r '+active_ms+'-peel1')
     syscommand = "cp -r "+active_ms+' '+active_ms+'-peel1'
@@ -171,17 +156,21 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
 
     # peel
-    print "Start peeling..."
+    logging.info("PEEL: Start peeling...")
     if os.path.exists(active_ms.replace('peel1','peel2')):
         os.system('rm -r '+active_ms.replace('peel1','peel2'))
     default('split')
     split(vis=active_ms, outputvis=active_ms.replace('peel1','peel2'))
     active_ms = active_ms.replace('peel1','peel2')
 
+    # TODO: phaseshift
+    #default('fixvis')
+    #fixvis(active_ms, )
+
     modelimg_reg = extrModel(modelimg, region, compl=False)
     default('ftw')
     ftw(vis=active_ms, model=modelimg_reg, nterms=len(modelimg_reg), wprojplanes=wprojplanes, usescratch=True)
-    print "First round of calibration..."
+    logging.info("PEEL: First round of calibration...")
     default('gaincal')
     gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     default('gaincal')
@@ -205,7 +194,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
         mask=region)
 
     # selfcal
-    print "Second round of calibration..."
+    logging.info("PEEL: Second round of calibration...")
     default('gaincal')
     gaincal(vis=active_ms, caltable='cal/peel2.Gp', solint='int', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     default('gaincal')
@@ -228,6 +217,23 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     # remove peeled model
     subtract(active_ms, ['img/peel2.model.tt0','img/peel2.model.tt1'], wprojplanes=wprojplanes)
 
+    # make image of that part of the sky
+    logging.info("PEEL: Make image of peeled region")
+    modelimg_reg_compl2 = extrModel(modelimg, region, compl=True, extend=[directionRA,directionDEC])
+    subtract(active_ms.replace('peel2','peel1'), modelimg_reg_compl, wprojplanes=wprojplanes)
+    active_ms_reg = active_ms.replace('peel2','peelr')
+    if os.path.exists(active_ms_reg):
+        os.system('rm -r '+active_ms_reg)
+    default('split')
+    split(vis=active_ms.replace('peel2','peel1'), outputvis=active_ms_reg)
+    applycal(vis=active_ms_reg, gaintable=['cal/peel2.Ga','cal/peel2.Gp'], calwt=False, flagbackup=False)
+    default('clean')
+    clean(vis=active_ms_reg, imagename='img/peel_'+region, gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
+        niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=2000, cell='1arcsec',\
+        stokes='I', nterms=1, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
+        mask='')
+    sys.exit(1)
+    
     # DEBUG
     #default('clean')
     #clean(vis=active_ms, imagename='img/DEBUG_peel_calib_tgtsub', gridmode='widefield', wprojplanes=wprojplanes,\
@@ -239,12 +245,13 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     invcaltabp = invertTable('cal/peel2.Gp')
 
     # put sources back
-    print "Recreating dataset..."
+    logging.info("PEEL: Recreating dataset...")
     if os.path.exists(active_ms.replace('peel2','peeled')):
         os.system('rm -r '+active_ms.replace('peel2','peeled'))
     default('split')
     split(vis=active_ms, outputvis=active_ms.replace('peel2','peeled'))
     active_ms = active_ms.replace('peel2','peeled')
+    # TODO: phaseshift back
     default('applycal')
     applycal(vis=active_ms, gaintable=[invcaltaba,invcaltabp], calwt=False, flagbackup=False)
 
