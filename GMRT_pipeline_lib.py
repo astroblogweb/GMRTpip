@@ -118,10 +118,13 @@ def cleanmaskclean(parms, s):
     clean(**parms)
 
     # make mask and re-do image
+    if parms['nterm'] > 1: img = parms['imagename']+'.image.tt0'
+    else: img = parms['imagename']+'.image'
+
     if s.extended:
-        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3 --atrous_do')
+        os.system(pipdir+'/setpp.sh make_mask.py '+img+' -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3 --atrous_do')
     else:
-        os.system(pipdir+'/setpp.sh make_mask.py '+parms['imagename']+'.image -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3')
+        os.system(pipdir+'/setpp.sh make_mask.py '+img+' -m'+parms['imagename']+'.newmask --threshpix=6 --threshisl=3')
 
     if s.mask_faint != '':
         parms['mask']=[parms['imagename']+'.newmask',s.mask_faint]
@@ -233,7 +236,7 @@ def FlagCal(caltable, sigma = 5, cycles = 3):
             flags[:,:, np.where( ants == ant ) ] = flagant
     tb.putcol('FLAG', flags)
     totflag_after = sum(flags.flatten())
-    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))".")
+    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))+".")
     tb.close()
 
 def FlagBLcal(caltable, sigma = 5):
@@ -248,7 +251,7 @@ def FlagBLcal(caltable, sigma = 5):
     flgs[ np.abs( np.angle(cpar) - np.mean(np.angle(cpar[good])) ) > sigma * np.std( np.angle(cpar[good]) ) ] = True
     tb.putcol('FLAG', flgs)
     totflag_after = sum(flgs.flatten())
-    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))".")
+    logging.debug(caltable+": Flagged "+str(totflag_after-totflag_before)+" points out of "+str(len(flags.flatten()))+".")
     tb.close()
 
 def getMaxAmp(caltable):
@@ -701,7 +704,7 @@ def gmrt_flag(ms, flagfile):
 
     date = year + '/' + mon + '/' + day
 
-    logging.debug('\n Observing date is %s %s %s = %s' % (year, month, day, date)
+    logging.debug('\n Observing date is %s %s %s = %s' % (year, month, day, date))
     for i in range(len(allLines)):
         init = (allLines[i])[0:3]
         if init == 'ANT':
@@ -930,7 +933,7 @@ class RefAntHeuristics:
 
         refAnt = keys[argSort]
 
-        logging.debug("Refant: "+refAnt)
+        logging.debug("Refant: "+str(refAnt[0]))
 
         return refAnt
 

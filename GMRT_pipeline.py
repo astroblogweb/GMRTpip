@@ -481,17 +481,13 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
    
     for s in sources:
 
-        if os.path.exists('plots/'+s.name+'/self'):
-            os.system('rm -r plots/'+s.name+'/self')
+        check_rm('plots/'+s.name+'/self')
         os.makedirs('plots/'+s.name+'/self')
-        if os.path.exists('img/'+s.name):
-            os.system('rm -r img/'+s.name)
+        check_rm('img/'+s.name)
         os.makedirs('img/'+s.name)
-        if os.path.exists('cal/'+s.name+'/self'):
-            os.system('rm -r cal/'+s.name+'/self')
+        check_rm('cal/'+s.name+'/self')
         os.makedirs('cal/'+s.name+'/self')
-        if os.path.exists('target_'+s.name+'.ms'):
-            os.system('rm -r target_'+s.name+'.ms*')
+        check_rm('target_'+s.name+'.ms')
     
         default('split')
         split(vis=active_ms, outputvis=s.ms,\
@@ -503,7 +499,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             ts = str(s.expnoise*10*(5-cycle))+' Jy' # expected noise this cycle
 
             parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/self'+str(cycle), 'gridmode':'widefield', 'wprojplanes':512,\
-          	    'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+          	    'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
            	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask,\
                 'threshold':ts, 'multiscale':s.multiscale}
             cleanmaskclean(parms, s)
@@ -511,7 +507,8 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             # ft() model back - NOTE: if clean doesn't converge clean() fail to put the model, better do it by hand
             # and then clip on residuals
             default('ftw')
-            ftw(vis=s.ms, model='img/'+s.name+'/self'+str(cycle)+'-masked.model', nterms=1, wprojplanes=512, usescratch=True)
+            ftw(vis=s.ms, model=['img/'+s.name+'/self'+str(cycle)+'-masked.model.tt0','img/'+s.name+'/self'+str(cycle)+'-masked.model.tt1'], \
+                    nterms=2, wprojplanes=512, usescratch=True)
             clipresidual(s.ms)
             
             # recalibrating    
@@ -582,7 +579,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
     
         # Final cleaning
         parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/final', 'gridmode':'widefield', 'wprojplanes':512,\
-          	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+          	'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
        	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask,\
             'threshold':ts, 'multiscale':s.multiscale}
         cleanmaskclean(parms, s)
@@ -597,8 +594,8 @@ def step_peeling():
     logging.info("### PEELING")
 
     for s in sources:
-        os.system('rm -r img/'+s.name+'/peel*')
-        modelforpeel = 'img/'+s.name+'/final-masked.model'
+        check_rm('img/'+s.name+'/peel*')
+        modelforpeel = ['img/'+s.name+'/final-masked.model.tt0','img/'+s.name+'/final-masked.model.tt1']
         refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
         refAnt = refAntObj.calculate()[0]
 
@@ -607,12 +604,12 @@ def step_peeling():
             s.ms = peel(s.ms, modelforpeel, sourcetopeel, refAnt, rob, cleanenv=True)
  
             parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/peel'+str(i), 'gridmode':'widefield', 'wprojplanes':512,\
-            	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+            	'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
         	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask,\
                 'threshold':str(s.expnoise)+' Jy', 'multiscale':s.multiscale}
             cleanmaskclean(parms, s)
        
-            modelforpeel = 'img/'+s.name+'/peel'+str(i)+'-masked.model'
+            modelforpeel = ['img/'+s.name+'/peel'+str(i)+'-masked.model.tt0','img/'+s.name+'/peel'+str(i)+'-masked.model.tt1']
 
 #######################################
 # Subtract point sources
@@ -621,21 +618,21 @@ def step_subtract():
     logging.info("### SUBTRACTING")
 
     for s in sources:
-        if os.path.exists(s.ms+'-sub'): os.system('rm -r '+s.ms+'-sub')
-        os.system('rm -r img/'+s.name+'/hires*')
+        check_rm(s.ms+'-sub')
+        check_rm('img/'+s.name+'/hires*')
 
         os.system('cp -r '+s.ms+' '+s.ms+'-sub')
         s.ms = s.ms+'-sub'
 
         # make a high res image to remove all the extended components
         parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/hires', 'gridmode':'widefield', 'wprojplanes':512,\
-           	'mode':'mfs', 'nterms':1, 'niter':5000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+           	'mode':'mfs', 'nterms':2, 'niter':5000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
             'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob-1, 'usescratch':True, 'mask':s.mask, \
             'selectdata':True, 'uvrange':'>4klambda','threshold':str(s.expnoise)+' Jy', 'multiscale':[]}
         cleanmaskclean(parms, s)
 
         # subtract 
-        subtract(s.ms, ['img/'+s.name+'/hires-masked.model'], region=s.sub, wprojplanes=512)
+        subtract(s.ms, ['img/'+s.name+'/hires-masked.model.tt0','img/'+s.name+'/hires-masked.model.tt1'], region=s.sub, wprojplanes=512)
 
 
 #######################################
@@ -644,10 +641,10 @@ def step_lowresclean():
     logging.info("### LOW RESOLUTION CLEANING")
 
     for s in sources:
-        os.system('rm -r img/'+s.name+'/lowres*')
+        check_rm('img/'+s.name+'/lowres*')
 
         parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/lowres', 'gridmode':'widefield', 'wprojplanes':512,\
-           	'mode':'mfs', 'nterms':1, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+           	'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
             'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask, \
             'uvtaper':True, 'outertaper':[taper], 'threshold':str(s.expnoise)+' Jy', 'multiscale':s.multiscale}
         cleanmaskclean(parms, s)
@@ -657,13 +654,13 @@ def step_lowresclean():
  
 
 # steps to execute
-step_env()
-step_import()
+#step_env()
+#step_import()
 freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not commment this out!
-step_preflag(active_ms, freq, n_chan)
-step_setjy(active_ms)
-step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
-step_calib(active_ms, freq, minBL_for_cal)
+#step_preflag(active_ms, freq, n_chan)
+#step_setjy(active_ms)
+#step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
+#step_calib(active_ms, freq, minBL_for_cal)
 step_selfcal(active_ms, freq, minBL_for_cal)
 step_peeling()
 step_subtract()
