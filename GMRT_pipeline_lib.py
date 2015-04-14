@@ -118,7 +118,7 @@ def cleanmaskclean(parms, s):
     clean(**parms)
 
     # make mask and re-do image
-    if parms['nterm'] > 1: img = parms['imagename']+'.image.tt0'
+    if parms['nterms'] > 1: img = parms['imagename']+'.image.tt0'
     else: img = parms['imagename']+'.image'
 
     if s.extended:
