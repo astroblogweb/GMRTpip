@@ -81,7 +81,7 @@ def findShape(img):
     ia.close()
     shape = max(shape1, shape2)
     # good image shapes
-    goodvalues = np.array([128,256,512,1024,2048])
+    goodvalues = np.array([6400,6144,5600,5400,5184,5000,4800,4608,4320,4096,3840,3600,3200,3072,2880,2560,2304,2048, 1600, 1536, 1200, 1024, 800, 512, 256, 128, 64])
     shape = min(goodvalues[np.where(goodvalues>=shape)])
     return shape, cell
     
