@@ -57,9 +57,11 @@ def step_env():
     check_rm('img')
     check_rm('cal')
     check_rm('plots')
+    check_rm('peel')
     os.makedirs('img')
     os.makedirs('cal')
     os.makedirs('plots')   
+    os.makedirs('peel')   
 
     
 #######################################
@@ -595,13 +597,16 @@ def step_peeling():
 
     for s in sources:
         check_rm('img/'+s.name+'/peel*')
+        check_rm('peel')
+        os.makedirs('peel')
         modelforpeel = ['img/'+s.name+'/final-masked.model.tt0','img/'+s.name+'/final-masked.model.tt1']
         refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
         refAnt = refAntObj.calculate()[0]
 
         for i, sourcetopeel in enumerate(s.peel):
 
-            s.ms = peel(s.ms, modelforpeel, sourcetopeel, refAnt, rob, cleanenv=True)
+            s.ms = peel(s.ms, modelforpeel, sourcetopeel, refAnt, rob, cleanenv=False)
+            os.system('mv img/peel_'+region.replace('.crtf','')+'* img/'+s.name)
  
             parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/peel'+str(i), 'gridmode':'widefield', 'wprojplanes':512,\
             	'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
@@ -650,7 +655,7 @@ def step_lowresclean():
         cleanmaskclean(parms, s)
         
         # pbcorr
-        correctPB('img/'+s.name+'/lowres-masked.image', freq, phaseCentre=None)
+        correctPB('img/'+s.name+'/lowres-masked.image.tt0', freq, phaseCentre=None)
  
 
 # steps to execute
@@ -661,7 +666,7 @@ freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not co
 #step_setjy(active_ms)
 #step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
 #step_calib(active_ms, freq, minBL_for_cal)
-step_selfcal(active_ms, freq, minBL_for_cal)
+#step_selfcal(active_ms, freq, minBL_for_cal)
 step_peeling()
 step_subtract()
 step_lowresclean()

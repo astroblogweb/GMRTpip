@@ -33,25 +33,24 @@ def extrModel(modelimg, region, compl=False, extend=None):
     for i, modelimgtt in enumerate(modelimg):
         if compl:
             # copy model
-            check_rm(region+"_peel-compl.model.tt"+str(i))
-            syscommand = "cp -r "+modelimgtt+" "+region+"_peel-compl.model.tt"+str(i)
-            os.system(syscommand)
-            ia.open(region+"_peel-compl.model.tt"+str(i))
+            check_rm(region.replace('.crtf','')+"_compl.model.tt"+str(i))
+            os.system("cp -r "+modelimgtt+" "+region.replace('.crtf','')+"_compl.model.tt"+str(i))
+            ia.open(region.replace('.crtf','')+"_compl.model.tt"+str(i))
             reg = rg.fromtextfile(filename=region, shape=ia.shape(), csys=ia.coordsys().torecord())
             # set to 0 all the pixels in the region,
             # so the rest of the field is untouched
             ia.set(pixels='0', region=reg)
             ia.close()
 
-            blankedmodelimg.append(region+"_peel-compl.model.tt"+str(i))
+            blankedmodelimg.append(region.replace('.crtf','')+"_compl.model.tt"+str(i))
 
         else:
-            check_rm(region+"_peel.model.tt"+str(i))
+            check_rm(region.replace('.crtf','')+"_model.tt"+str(i))
             default('immath')
             immath(imagename = modelimgtt, mode = 'evalexpr', expr = 'IM0', \
-            region = region, outfile = region+'_peel.model.tt'+str(i))
+            region = region, outfile = region.replace('.crtf','')+'_model.tt'+str(i))
 
-            blankedmodelimg.append(region+"_peel.model.tt"+str(i))
+            blankedmodelimg.append(region.replace('.crtf','')+"_model.tt"+str(i))
 
     return blankedmodelimg
 
@@ -126,34 +125,30 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     rob: robust parameter
     wprojplanes: number of w-projection planes
     """
+    logging.info('Start PEELING of '+region+' on '+active_ms)
+    # set subdir
+    region_name = region.replace('.crtf','')
+    sd = 'peel/'+region_name+'/'
+    check_rm(sd)
+    os.makedirs(sd)
+    os.makedirs(sd+'cal')
+    os.makedirs(sd+'img')
+    os.system("cp -r "+active_ms+' '+sd+active_ms+'_peel1')
+    os.system("cp -r "+active_ms+' '+sd+active_ms+'_peelr1')
+    os.system("cp "+region+' '+sd)
+    active_ms = sd+active_ms+'_peel1'
+    region = sd+region
+
     # if modelimg is a single image (nterms=1), put in an array
     if type(modelimg) is str: modelimg = [modelimg]
 
     # subtract all other sources
     logging.info("PEEL: Subtract all sources in the field...")
-    check_rm(active_ms+'-peel1')
-    check_rm(active_ms+'-peelr')
-    os.system("cp -r "+active_ms+' '+active_ms+'-peel1')
-    os.system("cp -r "+active_ms+' '+active_ms+'-peelr1')
-    active_ms = active_ms+'-peel1'
-
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_initial', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
-
     modelimg_reg_compl = extrModel(modelimg, region, compl=True)
     subtract(active_ms, modelimg_reg_compl, wprojplanes=wprojplanes)
 
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_uncalib_complsub', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
-
-    # peel
-    logging.info("PEEL: Start peeling...")
+    # ft compl model
+    logging.info("PEEL: ft of complementary model...")
     check_rm(active_ms.replace('peel1','peel2'))
     default('split')
     split(vis=active_ms, outputvis=active_ms.replace('peel1','peel2'))
@@ -166,51 +161,43 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     modelimg_reg = extrModel(modelimg, region, compl=False)
     default('ftw')
     ftw(vis=active_ms, model=modelimg_reg, nterms=len(modelimg_reg), wprojplanes=wprojplanes, usescratch=True)
-    logging.info("PEEL: First round of calibration...")
-    default('gaincal')
-    gaincal(vis=active_ms, caltable='cal/peel.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
-    default('gaincal')
-    gaincal(vis=active_ms, caltable='cal/peel.Ga', solint='300s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
-    default('applycal')
-    applycal(vis=active_ms, gaintable=['cal/peel.Ga','cal/peel.Gp'], calwt=False, flagbackup=False)
-
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_calib', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
 
     # get some values for clean
     epoch, directionRA, directionDEC = findCentre(modelimg_reg[0])
     shape, cell = findShape(modelimg_reg[0])
+
+    # selfcal cycle 1
+    logging.info("PEEL: First round of calibration...")
+    default('gaincal')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
+    default('gaincal')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Ga', solint='300s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
+    default('applycal')
+    applycal(vis=active_ms, gaintable=[sd+'cal/peel1.Ga',sd+'cal/peel1.Gp'], calwt=False, flagbackup=False)
+
     default('clean')
-    clean(vis=active_ms, imagename='img/peel', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
+    clean(vis=active_ms, imagename=sd+'img/peel1', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=[shape], cell=cell,\
         stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask=region)
 
+    # selfcal cycle 2
     logging.info("PEEL: Second round of calibration...")
     default('gaincal')
-    gaincal(vis=active_ms, caltable='cal/peel2.Gp', solint='int', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Gp', solint='int', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
     default('gaincal')
-    gaincal(vis=active_ms, caltable='cal/peel2.Ga', solint='60s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Ga', solint='60s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
     default('applycal')
-    applycal(vis=active_ms, gaintable=['cal/peel2.Ga','cal/peel2.Gp'], calwt=False, flagbackup=False)
-
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG'+region.replace('.crtf','')+'peel_calib2', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=1, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=5000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
+    applycal(vis=active_ms, gaintable=[sd+'cal/peel2.Ga',sd+'cal/peel2.Gp'], calwt=False, flagbackup=False)
 
     default('clean')
-    clean(vis=active_ms, imagename='img/peel2', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
+    clean(vis=active_ms, imagename=sd+'img/peel2', gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=[shape], cell=cell,\
         stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask=region)
     
     # remove peeled model
-    subtract(active_ms, ['img/peel2.model.tt0','img/peel2.model.tt1'], wprojplanes=wprojplanes)
+    subtract(active_ms, [sd+'img/peel2.model.tt0',sd+'img/peel2.model.tt1'], wprojplanes=wprojplanes)
 
     # make image of that part of the sky
     logging.info("PEEL: Make image of peeled region")
@@ -221,64 +208,37 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     check_rm(active_ms_reg)
     default('split')
     split(vis=active_ms.replace('peel2','peelr1'), outputvis=active_ms_reg)
-    applycal(vis=active_ms_reg, gaintable=['cal/peel2.Ga','cal/peel2.Gp'], calwt=False, flagbackup=False)
+    applycal(vis=active_ms_reg, gaintable=[sd+'cal/peel2.Ga',sd+'cal/peel2.Gp'], calwt=False, flagbackup=False)
     default('clean')
-    clean(vis=active_ms_reg, imagename='img/peel_'+region, gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
+    clean(vis=active_ms_reg, imagename='img/peel_'+region_name, gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=2000, cell='1arcsec',\
         stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
         mask='')
     
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_calib_tgtsub', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
-
     # invert calibration table
-    invcaltaba = invertTable('cal/peel2.Ga')
-    invcaltabp = invertTable('cal/peel2.Gp')
+    logging.info("PEEL: Invert solution tables...")
+    invcaltaba = invertTable(sd+'cal/peel2.Ga')
+    invcaltabp = invertTable(sd+'cal/peel2.Gp')
 
     # put sources back
     logging.info("PEEL: Recreating dataset...")
-    check_rm(active_ms.replace('peel2','peeled'))
     default('split')
-    split(vis=active_ms, outputvis=active_ms.replace('peel2','peeled'))
-    active_ms = active_ms.replace('peel2','peeled')
+    split(vis=active_ms, outputvis=active_ms.replace('peel2','peel-'+region_name))
+    active_ms = active_ms.replace('peel2','peel-'+region_name)
     # TODO: phaseshift back
     default('applycal')
     applycal(vis=active_ms, gaintable=[invcaltaba,invcaltabp], calwt=False, flagbackup=False)
-
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_invcalib', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='1arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
 
     default('ftw')
     ftw(vis=active_ms, model=modelimg_reg_compl, nterms=len(modelimg_reg_compl), wprojplanes=wprojplanes, usescratch=True)
     default('uvsub')
     uvsub(vis=active_ms, reverse=True)
 
-    # DEBUG
-    #default('clean')
-    #clean(vis=active_ms, imagename='img/DEBUG_peel_invcalib_compladd', gridmode='widefield', wprojplanes=wprojplanes,\
-    #        mode='mfs', nterms=2, niter=10000, gain=0.1, threshold='0.1mJy', psfmode='clark', imagermode='csclean',\
-    #        imsize=2000, cell='2arcsec', stokes='I', weighting='briggs', robust=rob, usescratch=True, mask='')
+    # copy the peeled MS in the working dir
+    os.system('mv '+active_ms+' .')
+    active_ms = active_ms.split('/')[-1]
 
     if cleanenv:
-        check_rm('cal/'+region.replace('.crtf','')+'-peel.Ga')
-        check_rm('cal/'+region.replace('.crtf','')+'-peel.Gp')
-        os.system('cp -r cal/peel2.Ga cal/'+region.replace('.crtf','')+'-peel.Ga') # copy solutions
-        os.system('cp -r cal/peel2.Gp cal/'+region.replace('.crtf','')+'-peel.Gp') # copy solutions
-        for img in modelimg_reg_compl: check_rm(img)
-        for img in modelimg_reg: check_rm(img)
-        splitted = active_ms.rsplit('peeled', 1)
-        check_rm('peel1'.join(splitted))
-        check_rm('peel2'.join(splitted))
-        check_rm('peelr1'.join(splitted))
-        check_rm('peelr2'.join(splitted))
-        check_rm('cal/peel*')
-        check_rm('img/peel.*')
-        check_rm('img/peel2.*')
+        check_rm(sd)
 
     return active_ms

@@ -177,7 +177,7 @@ def clipresidual(active_ms, field='', scan=''):
                         bl_med = np.median( amp[(amp == amp)] )
                         # if BL residuals are 3 times out of med rms, flag
                         if abs(bl_med - med) > 3*rms:
-                            logging.debug("Flagging corr: ", d['axis_info']['corr_axis'][corr]," - chan:", chan," - BL: ",d['axis_info']['ifr_axis']['ifr_name'][bl])
+                            logging.debug("Flagging corr: "+d['axis_info']['corr_axis'][corr]+" - chan:"+chan+" - BL: "+d['axis_info']['ifr_axis']['ifr_name'][bl])
                             d['flag'][corr][chan][bl] = True
         # TODO: extend flags for BL which appears often
         ms.putdata({'flag':d['flag']})
@@ -396,7 +396,7 @@ def correctPB(imgname, freq=0, phaseCentre=None):
 
     # find the correct freq
     freq = min([153,235,325,610,1400], key=lambda x:abs(x-freq/1.e6))
-    logging.info("Correcting PB - frequency is", freq, "MHz")
+    logging.info("Correcting PB - frequency is "+str(freq)+" MHz")
 
     # from http://gmrt.ncra.tifr.res.in/gmrt_hpage/Users/doc/manual/UsersManual/node27.html
     parm = {153: [-4.04,76.2,-68.8,22.03],
