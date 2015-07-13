@@ -35,7 +35,7 @@
 # taper final image
 #taper = '25arcsec'
 # pipeline dir
-#pipdir = '/home/hslxrsrv3/stsf309/GMRTpipeline'
+#pipdir = '/home/stsf309/GMRTpipeline'
 
 import os, sys
 import itertools
@@ -81,7 +81,7 @@ def step_import():
     if flagf!='':
         gmrt_flag(active_ms, flagf)
     else:
-        logging.warning("no flag pre-applied.")
+        logging.warning("No flag pre-applied.")
     
     # Create listobs.txt for references
     check_rm('listobs.txt')
@@ -137,8 +137,8 @@ def step_preflag(active_ms, freq, n_chan):
     statsFlag(active_ms, note='Initial')
     
     if len(n_chan) == 1 and n_chan[0] == 512:
-        if freq > 600e6 and freq < 650e6: spw='0:0~10,0:502~511' # 610 MHz
-        if freq > 300e6 and freq < 350e6: spw='0:0~10,0:502~511' # 325 MHz
+        if freq > 600e6 and freq < 650e6: spw='0:0~5,0:507~511' # 610 MHz
+        if freq > 300e6 and freq < 350e6: spw='0:0~5,0:507~511' # 325 MHz
         if freq > 200e6 and freq < 300e6: spw='0:0~130,0:450~511' # 235 MHz +20 border
     elif len(n_chan) == 1 and n_chan[0] == 256:
         if freq > 600e6 and freq < 650e6: spw='0:0~5,0:251~255' # 610 MHz
@@ -158,7 +158,7 @@ def step_preflag(active_ms, freq, n_chan):
     
     if badranges != {}:
         for badant in badranges:
-            logging.debug("Flagging :", badant, " - time: ", badranges[badant])
+            logging.debug("Flagging :"+badant+" - time: "+badranges[badant])
             default('flagdata')
             flagdata(vis=active_ms, mode='manualflag', antenna=badant,\
             	timerange=badranges[badant], flagbackup=False)
@@ -172,18 +172,22 @@ def step_preflag(active_ms, freq, n_chan):
     flagdata(vis=active_ms, mode='clip', clipzeros=True,\
     	correlation='ABS_ALL', action='apply', flagbackup=False)
     
-    # flag statistics after pre-flag
-    statsFlag(active_ms, note='After pre-flagging')
-    
     # save flag status
     default('flagmanager')
-    flagmanager(vis=active_ms, mode='save', versionname='AfterFirstFlagging', comment=str(datetime.datetime.now()))
-    
-    #######################################
-    # Manual checks
-    #plotms(vis=active_ms, xaxis='time', yaxis='amp', ydatacolumn='data', avgchannel='512', iteraxis='antenna', coloraxis='baseline')
-    #plotms(vis=active_ms, xaxis='channel', yaxis='amp', ydatacolumn='data', avgtime='3600', iteraxis='antenna', coloraxis='baseline')
+    flagmanager(vis=active_ms, mode='save', versionname='AfterStaticFlagging', comment=str(datetime.datetime.now()))
 
+    # First RFI removal
+    default('flagdata')
+    statsFlag(active_ms, note='After static flagging, befor tfcrop.')
+    flagdata(vis=active_ms, mode='tfcrop', datacolumn='data',
+            timecutoff = 4., freqcutoff = 3., maxnpieces = 7,\
+            action='apply', flagbackup=False)
+    statsFlag(active_ms, note='End of initial flagging')
+
+    # save flag status
+    default('flagmanager')
+    flagmanager(vis=active_ms, mode='save', versionname='AfterDynamicFlagging', comment=str(datetime.datetime.now()))
+    
     
 #######################################
 # Set models
@@ -226,7 +230,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
         elif len(n_chan) == 1 and n_chan[0] == 128: initspw = '0:70~80'
         elif len(n_chan) == 2 and n_chan[0] == 128 and n_chan[1] == 128: initspw = '0:70~80, 1:70~80'
 
-        for step in ['cycle1','cycle2','final']:
+        for step in ['cycle1','final']:
 
             logging.info("Start bandpass step: "+step)
 
@@ -256,9 +260,9 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             # init bandpass correction
             logging.info("Bandpass calibration 1")
             if freq < 500e6:
-                minsnr=2.0
-            else:
                 minsnr=3.0
+            else:
+                minsnr=5.0
             default('bandpass')
             bandpass(vis=active_ms, caltable='cal/flux_cal'+str(s.f)+'/'+step+'-noK.B', field=s.f, selectdata=True,\
             	uvrange='>100m', scan=s.fscan, solint='inf', combine='scan,field', refant=refAnt,\
@@ -270,6 +274,8 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             gaincal(vis=active_ms, caltable='cal/flux_cal'+str(s.f)+'/'+step+'.K', field=s.f, selectdata=True,\
                 uvrange='>100m', scan=s.fscan, solint='int',combine='', refant=refAnt, interp=interp+['nearest'],\
                 minblperant=minBL_for_cal, minsnr=minsnr,  gaintype='K', gaintable=gaintables+['cal/flux_cal'+str(s.f)+'/'+step+'-noK.B'])
+            # flag outliers
+            FlagCal('cal/flux_cal'+str(s.f)+'/'+step+'.K', sigma = 5, cycles = 3)
 
             plotGainCal('cal/flux_cal'+str(s.f)+'/'+step+'.K', delay=True)
             gaintables.append('cal/flux_cal'+str(s.f)+'/'+step+'.K')
@@ -291,30 +297,16 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             	gaintable=['cal/flux_cal'+str(s.f)+'/'+step+'.B'], calwt=False, flagbackup=False, interp=['nearest'])
             
             # flag statistics after applycal
-            statsFlag(active_ms, field=s.f, scan=s.fscan, note='Bandpass cycle \"'+step+'\" after apply')
+            statsFlag(active_ms, field=s.f, scan=s.fscan, note='Bandpass cycle \"'+step+'\" after apply (on fluxcal field)')
          
-            # Run an rflag after the first and second cycle
-            # to remove most obvious RFI
             if step != 'final':
-                logging.info("Flagdata")
-                default('flagdata')
-                flagdata(vis=active_ms, mode='rflag', field=s.f, scan=s.fscan,\
-                    	ntime='scan', combinescans=False, datacolumn='corrected', winsize=3,\
-                    	timedevscale=5.0, freqdevscale=5.0, action='apply', flagbackup=False)
-                default('flagdata')
-                flagdata(vis=active_ms, mode='extend', field=s.f, scan=s.fscan, flagbackup=False)
-                
-                # flag statistics after flagging
-                statsFlag(active_ms, field=s.f, scan=s.fscan, note='Bandpass cycle \""+step+"\" after flagging')
-
-                # finally clip on residuals
+                # clip on residuals
                 clipresidual(active_ms, field=s.f, scan=s.fscan)
 
         # end of 3 bandpass cycles
         done.append(s.f)
     # end of flux_cal cycles   
 
-    # flag statistics after flagging
     statsFlag(active_ms, note='Before apply bandpass')
 
     for s in sources:
@@ -327,19 +319,19 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
         applycal(vis=active_ms, selectdata=True, field=s.t, scan=s.tscan,\
             gaintable=['cal/flux_cal'+str(s.f)+'/'+step+'.B'], calwt=False, flagbackup=False, interp=['nearest'])
 
+    statsFlag(active_ms, note='After apply bandpass')
+
     # flag statistics after flagging
-    statsFlag(active_ms, note='Before flagging')
+    statsFlag(active_ms, note='Before rflag')
 
     # run the final flagger
     default('flagdata')
     flagdata(vis=active_ms, mode='rflag',\
         ntime='scan', combinescans=False, datacolumn='corrected', winsize=3,\
-        timedevscale=4, freqdevscale=4, action='apply', flagbackup=False)
-    default('flagdata')
-    flagdata(vis=active_ms, mode='extend', flagbackup=False)
-    
+        timedevscale=5, freqdevscale=5, action='apply', flagbackup=False)
+
     # flag statistics after flagging
-    statsFlag(active_ms, note='After flagging')
+    statsFlag(active_ms, note='After rflag')
  
 
 #######################################
@@ -368,9 +360,9 @@ def step_calib(active_ms, freq, minBL_for_cal):
     
             # Gain cal phase
             if freq < 500e6:
-                minsnr=1.0
+                minsnr=2.0
             else:
-                minsnr=3.0
+                minsnr=4.0
             default('gaincal')
             gaincal(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'-noK.Gp', field=s.g+','+s.f, selectdata=True,\
             	uvrange='>100m', scan=",".join(filter(None, [s.fscan,s.gscan])), solint='int', refant=refAnt, interp=interp, \
@@ -382,6 +374,8 @@ def step_calib(active_ms, freq, minBL_for_cal):
                 uvrange='>100m', scan=",".join(filter(None, [s.fscan,s.gscan])), solint='int', \
                 refant=refAnt, minblperant=minBL_for_cal, minsnr=minsnr,  gaintype='K', interp=interp+['linear'],\
                 gaintable=gaintables+['cal/'+s.name+'/gain'+str(cycle)+'-noK.Gp'])
+            FlagCal('cal/'+s.name+'/gain'+str(cycle)+'.K', sigma = 5, cycles = 3)
+            plotGainCal('cal/'+s.name+'/gain'+str(cycle)+'.K', delay=True)
 
             default('gaincal')
             gaincal(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.Gp', field=s.g+','+s.f, selectdata=True,\
@@ -399,24 +393,25 @@ def step_calib(active_ms, freq, minBL_for_cal):
     
             # Gain cal amp
             if freq < 500e6:
-                minsnr=1.0
-            else:
                 minsnr=3.0
+            else:
+                minsnr=5.0
             default('gaincal')
             gaincal(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.Ga', field=s.g+','+s.f,\
             	selectdata=True, uvrange='>100m', scan=",".join(filter(None, [s.fscan,s.gscan])), \
                 solint='60s', minsnr=minsnr, refant=refAnt, minblperant=minBL_for_cal, calmode='a', gaintable=gaintables)
+            FlagCal('cal/'+s.name+'/gain'+str(cycle)+'.Ga', sigma = 3, cycles = 3)
     
             # if gain and flux cal are the same the fluxscale cannot work
             # do it only in the last cycle, so the next clip can work, otherwise the uvsub subtract
             # a wrong model for (amp==1) for the gain_cal if it had been rescaled
             if s.g != s.f and cycle == n_cycles-1:
                 # fluxscale
+                logging.debug("Rescale gaincal sol with fluxcal sol.")
                 default('fluxscale')
-                myscale = fluxscale(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.Ga',\
+                fluxscale(vis=active_ms, caltable='cal/'+s.name+'/gain'+str(cycle)+'.Ga',\
                 	fluxtable='cal/'+s.name+'/gain'+str(cycle)+'.Ga_fluxscale', reference=s.f, transfer=s.g)
-                logging.debug("Rescaled gaincal sol with scale = ", myscale)
-    
+
                 plotGainCal('cal/'+s.name+'/gain'+str(cycle)+'.Ga_fluxscale', amp=True)
                 gaintables.append('cal/'+s.name+'/gain'+str(cycle)+'.Ga_fluxscale')
                 interp.append('linear')
@@ -434,38 +429,45 @@ def step_calib(active_ms, freq, minBL_for_cal):
             #plotGainCal('cal/'+s.name+'/gain'+str(cycle)+'.BLap', amp=True, phase=True, BL=True)
             #gaintables.append('cal/'+s.name+'/gain'+str(cycle)+'.BLap')
             #interp.append('nearest')
+
+            default('applycal')
+            applycal(vis=active_ms, field=s.g, scan=s.gscan, gaintable=gaintables, interp=interp,\
+                calwt=False, flagbackup=False)
             
-            # clip of residuals
+            # clip of residuals not on the last cycle (useless and prevent imaging of calibrator)
             if cycle != n_cycles-1:
-                default('applycal')
-                applycal(vis=active_ms, field=s.g+','+s.f, scan=",".join(filter(None, [s.fscan,s.gscan])), gaintable=gaintables, interp=interp,\
-                	calwt=False, flagbackup=False)
-                clipresidual(active_ms, field=s.f+','+s.g, scan=",".join(filter(None, [s.fscan,s.gscan])))
+                clipresidual(active_ms, field=s.g, scan=s.gscan)
 
             # store list of gaintables to apply later
             s.gaintables = gaintables
             s.interp = interp
+
+        # make a test img of the gain cal to check that everything is fine
+        parms = {'vis':active_ms, 'field':s.g, 'imagename':'img/'+s.name+'_gcal', 'gridmode':'widefield', 'wprojplanes':128,\
+              	'mode':'mfs', 'nterms':2, 'niter':1000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
+           	    'imsize':512, 'cell':'1arcsec', 'weighting':'briggs', 'robust':0, 'usescratch':False}
+        cleanmaskclean(parms, s, makemask=False)
     
     # use a different cycle to compensate for messing up with uvsub during the calibration of other sources
     # in this way the CRRECTED_DATA are OK for all fields
     for s in sources:
 
-        # apply B, Gp, Ga, BL
+        # apply B, Gp, Ga
         default('applycal')
         applycal(vis=active_ms, field=s.f,\
         	scan=s.fscan, gaintable=s.gaintables, \
-            gainfield=[s.f, s.f, s.f, s.f],\
-        	interp=s.interp, calwt=False, flagbackup=True)
+            gainfield=[s.f, s.f, s.f],\
+        	interp=s.interp, calwt=False, flagbackup=False)
         default('applycal')
         applycal(vis=active_ms, field=s.g,\
         	scan=",".join(filter(None, [s.fscan,s.gscan])), gaintable=s.gaintables, \
-            gainfield=[s.f, s.g, s.g, s.f],\
-        	interp=s.interp, calwt=False, flagbackup=True)
+            gainfield=[s.f, s.g, s.g],\
+        	interp=s.interp, calwt=False, flagbackup=False)
         default('applycal')
         applycal(vis=active_ms, field=s.t,\
         	scan=",".join(filter(None, [s.fscan,s.gscan,s.tscan])), gaintable=s.gaintables, \
-            gainfield=[s.f, s.g, s.g, s.f], \
-        	interp=s.interp, calwt=False, flagbackup=True)
+            gainfield=[s.f, s.g, s.g], \
+        	interp=s.interp, calwt=False, flagbackup=False)
 
     
 #######################################
@@ -506,12 +508,10 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
                 'threshold':ts, 'multiscale':s.multiscale}
             cleanmaskclean(parms, s)
 
-            # ft() model back - NOTE: if clean doesn't converge clean() fail to put the model, better do it by hand
-            # and then clip on residuals
+            # ft() model back - if clean doesn't converge clean() fail to put the model, better do it by hand
             default('ftw')
             ftw(vis=s.ms, model=['img/'+s.name+'/self'+str(cycle)+'-masked.model.tt0','img/'+s.name+'/self'+str(cycle)+'-masked.model.tt1'], \
                     nterms=2, wprojplanes=512, usescratch=True)
-            clipresidual(s.ms)
             
             # recalibrating    
             refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
@@ -524,34 +524,36 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             if cycle==3: solint='int'
             if cycle==4: solint='int'
             if freq < 500e6:
-                minsnr=1.0
+                minsnr=2.0
             else:
-                minsnr=3.0
+                minsnr=4.0
 
             default('gaincal')
             gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', solint=solint, minsnr=minsnr,\
             	selectdata=True, uvrange='>50m', refant=refAnt, minblperant=minBL_for_cal, gaintable=[], calmode='p')
 
             # Delay correction: find leftover time-dependent delays
-            if cycle >= 3:
-                default('gaincal')
-                gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.K', solint=solint, minsnr=minsnr,\
-                    selectdata=True, uvrange='>50m', refant=refAnt, minblperant=minBL_for_cal, gaintype='K', \
-                    interp=['linear'], gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.Gp'])
-                # flag outliers
-                FlagCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', sigma = 5, cycles = 3)
-                # apply just for propagate K flags
-                default('applycal')
-                applycal(vis=s.ms, field = '', gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.K'], calwt=False, flagbackup=True)           
+            # TODO: Is it a good way since delays are DDE?
+#            if cycle >= 3:
+#                default('gaincal')
+#                gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.K', solint=solint, minsnr=minsnr,\
+#                    selectdata=True, uvrange='>50m', refant=refAnt, minblperant=minBL_for_cal, gaintype='K', \
+#                    interp=['linear'], gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.Gp'])
+#                # flag outliers
+#                FlagCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', sigma = 5, cycles = 3)
+#                plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', delay=True)
+#                # apply just for propagate K flags
+#                default('applycal')
+#                applycal(vis=s.ms, field = '', gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.K'], calwt=False, flagbackup=False, applymode='flagonly') 
             
             # Gaincal - amp
             if cycle >= 3:        
                     if cycle==3: solint='300s'
                     if cycle==4: solint='60s'
                     if freq < 500e6:
-                        minsnr=1.0
-                    else:
                         minsnr=3.0
+                    else:
+                        minsnr=5.0
                     default('gaincal')
                     gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.Ga',\
                     	selectdata=True, uvrange='>50m', solint=solint, minsnr=minsnr, refant=refAnt,\
@@ -562,7 +564,6 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             if cycle >= 3: 
                 plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', phase=True)
                 plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Ga', amp=True)
-                plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.K', delay=True)
             else:
                 plotGainCal('cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', phase=True)
             
@@ -575,7 +576,7 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
                 gaintable=['cal/'+s.name+'/self/gain'+str(cycle)+'.Gp']
 
             default('applycal')
-            applycal(vis=s.ms, field = '', gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=True)           
+            applycal(vis=s.ms, field = '', gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=False)           
 
         # end of selfcal loop
     
@@ -605,8 +606,7 @@ def step_peeling():
 
         for i, sourcetopeel in enumerate(s.peel):
 
-            s.ms = peel(s.ms, modelforpeel, sourcetopeel, refAnt, rob, cleanenv=False)
-            os.system('mv img/peel_'+region.replace('.crtf','')+'* img/'+s.name)
+            s.ms = peel(s, modelforpeel, sourcetopeel, refAnt, rob, cleanenv=False)
  
             parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/peel'+str(i), 'gridmode':'widefield', 'wprojplanes':512,\
             	'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
@@ -641,7 +641,7 @@ def step_subtract():
 
 
 #######################################
-# Final clean
+# Low-res clean
 def step_lowresclean():
     logging.info("### LOW RESOLUTION CLEANING")
 

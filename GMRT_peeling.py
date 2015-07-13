@@ -79,7 +79,7 @@ def findShape(img):
     shape2 = ia.shape()[csys.findcoordinate('direction')[1][1]]
     cell = str(int(abs(csys.increment()['numeric'][csys.findcoordinate('direction')[1][0]]*180./np.pi*3600.)))+'arcsec'
     ia.close()
-    shape = max(shape1, shape2)
+    shape = max(shape1, shape2)*5.0 # add extra space (TODO: DEBUG put at 1.5)
     # good image shapes
     goodvalues = np.array([6400,6144,5600,5400,5184,5000,4800,4608,4320,4096,3840,3600,3200,3072,2880,2560,2304,2048, 1600, 1536, 1200, 1024, 800, 512, 256, 128, 64])
     shape = min(goodvalues[np.where(goodvalues>=shape)])
@@ -116,15 +116,16 @@ def subtract(active_ms, modelimg, region='', wprojplanes=0):
     uvsub(vis=active_ms)
 
 
-def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanenv=True):
+def peel(s, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanenv=True):
     """General function to call in sequence all the steps
-    active_ms: MS with calibrated data in DATA
+    s: object with source information
     modelimg: model of the whole sky (single img or array for nterms>1)
     region: region where is the source to peel
     refAnt: is the reference antenna for the calibration step
     rob: robust parameter
     wprojplanes: number of w-projection planes
     """
+    active_ms = s.ms
     logging.info('Start PEELING of '+region+' on '+active_ms)
     # set subdir
     region_name = region.replace('.crtf','')
@@ -133,6 +134,7 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     os.makedirs(sd)
     os.makedirs(sd+'cal')
     os.makedirs(sd+'img')
+    os.makedirs(sd+'plots')
     os.system("cp -r "+active_ms+' '+sd+active_ms+'_peel1')
     os.system("cp -r "+active_ms+' '+sd+active_ms+'_peelr1')
     os.system("cp "+region+' '+sd)
@@ -150,9 +152,13 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     # ft compl model
     logging.info("PEEL: ft of complementary model...")
     check_rm(active_ms.replace('peel1','peel2'))
+    check_rm(active_ms.replace('peel1','peel2').split('/')[-1]) # remove symbolic link
     default('split')
     split(vis=active_ms, outputvis=active_ms.replace('peel1','peel2'))
     active_ms = active_ms.replace('peel1','peel2')
+    # symbolic link, necessary to make plots as they want the MS in the same dir one runs CASA
+    print "ln -s "+active_ms+" "+active_ms.split('/')[-1]
+    os.system("ln -s "+active_ms+" "+active_ms.split('/')[-1])
 
     # TODO: phaseshift
     #default('fixvis')
@@ -169,9 +175,11 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     # selfcal cycle 1
     logging.info("PEEL: First round of calibration...")
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Gp', solint='30s', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Gp', solint='30s', refant=refAnt, minsnr=1, minblperant=4, calmode='p', uvrange='>50m')
+    plotGainCal(sd+'cal/peel1.Gp', phase=True)
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Ga', solint='300s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Ga', solint='360s', refant=refAnt, minsnr=1, minblperant=4, calmode='a', uvrange='>50m')
+    plotGainCal(sd+'cal/peel1.Ga', amp=True)
     default('applycal')
     applycal(vis=active_ms, gaintable=[sd+'cal/peel1.Ga',sd+'cal/peel1.Gp'], calwt=False, flagbackup=False)
 
@@ -184,9 +192,11 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     # selfcal cycle 2
     logging.info("PEEL: Second round of calibration...")
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Gp', solint='int', refant=refAnt, minsnr=0, minblperant=4, calmode='p')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Gp', solint='10s', refant=refAnt, minsnr=1, minblperant=4, calmode='p', uvrange='>50m')
+    plotGainCal(sd+'cal/peel2.Gp', phase=True)
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Ga', solint='60s', refant=refAnt, minsnr=0, minblperant=4, calmode='a')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Ga', solint='120s', refant=refAnt, minsnr=1, minblperant=4, calmode='a', uvrange='>50m')
+    plotGainCal(sd+'cal/peel2.Ga', amp=True)
     default('applycal')
     applycal(vis=active_ms, gaintable=[sd+'cal/peel2.Ga',sd+'cal/peel2.Gp'], calwt=False, flagbackup=False)
 
@@ -199,26 +209,30 @@ def peel(active_ms, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanen
     # remove peeled model
     subtract(active_ms, [sd+'img/peel2.model.tt0',sd+'img/peel2.model.tt1'], wprojplanes=wprojplanes)
 
-    # make image of that part of the sky
+    # make image of that part of the sky with DD corrections
     logging.info("PEEL: Make image of peeled region")
     modelimg_regext_compl = extrModel(modelimg, region, compl=True, extend=[directionRA,directionDEC])
     # remove far away sources from initial dataset
-    subtract(active_ms.replace('peel2','peelr1'), modelimg_regext_compl, wprojplanes=wprojplanes)
+    active_ms_reg_sub = active_ms.replace('peel2','peelr1')
+    subtract(active_ms_reg_sub, modelimg_regext_compl, wprojplanes=wprojplanes)
     active_ms_reg = active_ms.replace('peel2','peelr2')
     check_rm(active_ms_reg)
     default('split')
-    split(vis=active_ms.replace('peel2','peelr1'), outputvis=active_ms_reg)
+    split(vis=active_ms_reg_sub, outputvis=active_ms_reg)
     applycal(vis=active_ms_reg, gaintable=[sd+'cal/peel2.Ga',sd+'cal/peel2.Gp'], calwt=False, flagbackup=False)
+    check_rm('img/'+s.name+'/peel_'+region.replace('.crtf','')+'*')
     default('clean')
-    clean(vis=active_ms_reg, imagename='img/peel_'+region_name, gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
+    clean(vis=active_ms_reg, imagename='img/'+s.name+'/peel_'+region.split('/')[-1].replace('.crtf',''), gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=2000, cell='1arcsec',\
         stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
-        mask='')
-    
+        mask='img/'+s.name+'/final-masked.mask')
+
     # invert calibration table
     logging.info("PEEL: Invert solution tables...")
     invcaltaba = invertTable(sd+'cal/peel2.Ga')
+    plotGainCal(invcaltaba, amp=True)
     invcaltabp = invertTable(sd+'cal/peel2.Gp')
+    plotGainCal(invcaltabp, phase=True)
 
     # put sources back
     logging.info("PEEL: Recreating dataset...")

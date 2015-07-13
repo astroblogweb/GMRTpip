@@ -3,6 +3,7 @@
 
 # Library for GMRT pipeline
 import logging
+import numpy as np
 
 def check_rm(regexp):
     """
@@ -109,13 +110,15 @@ class Source(object):
         else:
             self.expnoise = 100.e-6
 
-def cleanmaskclean(parms, s):
+def cleanmaskclean(parms, s, makemask=True):
     """
     Clean then make a mask and clean again
     parms: dict of parameters for the clean task
+    makemask: if false quit after first clean
     """
     default('clean')
     clean(**parms)
+    if not makemask: return
 
     # make mask and re-do image
     if parms['nterms'] > 1: img = parms['imagename']+'.image.tt0'
@@ -146,24 +149,26 @@ def clipresidual(active_ms, field='', scan=''):
     uvsub(vis=active_ms)
 
     # flag statistics before flagging
-    statsFlag(active_ms, field=field, scan=scan, note='Before BL flag')
+    statsFlag(active_ms, note='Before BL flag')
 
     logging.debug("Removing baselines with high residuals:")
     import itertools
     ms.open(active_ms, nomodify=False)
     metadata = ms.metadata()
+    flag = {}
     # datadesc ids are usually one per spw, but ms can also be splitted in corr
     for datadescid in metadata.datadescids():
+        flag[datadescid] = {}
         logging.debug("Working on datadesc: "+str(datadescid))
         ms.msselect({'field':field, 'scan':scan})
-        # TODO: ask for residual_amplitude and split this function?
         d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2','axis_info'], ifraxis=True)
         # cycle on corr
         for corr in xrange(len(d['corrected_amplitude'])):
+            flag[datadescid][corr] = {}
             logging.debug("Working on corr: "+d['axis_info']['corr_axis'][corr])
             # cycle on channels
             for chan in xrange(len(d['corrected_amplitude'][corr])):
-                #logging.debug("Working on chan: "+str(chan))
+                flag[datadescid][corr][chan] = {}
                 meds = []
                 # cycle on bl
                 for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
@@ -172,25 +177,33 @@ def clipresidual(active_ms, field='', scan=''):
                 med = np.mean(meds)
                 rms = np.std(meds)
                 for bl in xrange(len(d['corrected_amplitude'][corr][chan])):
+                    flag[datadescid][corr][chan][bl] = False
                     amp = d['corrected_amplitude'][corr][chan][bl][~d['flag'][corr][chan][bl]] # get unflagged data
                     if amp != []: 
                         bl_med = np.median( amp[(amp == amp)] )
                         # if BL residuals are 3 times out of med rms, flag
                         if abs(bl_med - med) > 3*rms:
-                            logging.debug("Flagging corr: "+d['axis_info']['corr_axis'][corr]+" - chan:"+chan+" - BL: "+d['axis_info']['ifr_axis']['ifr_name'][bl])
-                            d['flag'][corr][chan][bl] = True
-        # TODO: extend flags for BL which appears often
-        ms.putdata({'flag':d['flag']})
+                            logging.debug("Flagging corr: "+d['axis_info']['corr_axis'][corr]+" - chan:"+str(chan)+" - BL: "+d['axis_info']['ifr_axis']['ifr_name'][bl])
+                            flag[datadescid][corr][chan][bl] = True
     ms.close()
 
-    # flag statistics before flagging
-    statsFlag(active_ms, field=field, scan=scan, note='Before tfcrop')
+    # extend flags to all scans
+    ms.open(active_ms, nomodify=False)
+    metadata = ms.metadata()
+    # datadesc ids are usually one per spw, but ms can also be splitted in corr
+    for datadescid in metadata.datadescids():
+        ms.msselect()
+        w = ms.getdata(['flag'], ifraxis=True)
+        for corr in xrange(len(w['flag'])):
+            # TODO: extend flags on all chan for BLs which appear often
+            for chan in xrange(len(w['flag'][corr])):
+                for bl in xrange(len(w['flag'][corr][chan])):
+                    if flag[datadescid][corr][chan][bl] == True:
+                        w['flag'][corr][chan][bl] = True
+        ms.putdata({'flag':w['flag']})
+    ms.close()
 
-    default('flagdata')
-    flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
-
-    # flag statistics after flagging
-    statsFlag(active_ms, field=field, scan=scan, note='After all clipping')
+    statsFlag(active_ms, note='After clipping')
 
 
 def statsFlag(active_ms, field='', scan='', note=''):
@@ -375,13 +388,6 @@ def plotBPCal(calt, amp=False, phase=False):
                 iteration='antenna',plotrange=[0,0,-phaseplotmax,phaseplotmax],showflags=False,\
                 plotsymbol='o',plotcolor='blue',markersize=5.0,fontsize=10.0,showgui=False,figfile=filename)
 
-
-# TODO
-def makemask(imagename):
-    """Convert the MS to fits (pyrap not working in some environments)
-    use pybdsm to do source extraction
-    make a mask from it
-    """
 
 def correctPB(imgname, freq=0, phaseCentre=None):
     """Given an image "img" create the "img.pbcorr" which
@@ -918,7 +924,7 @@ class RefAntHeuristics:
             self.flagScore = flagClass.calc_score()
             for n in names:
                 try:
-                    score[n] += self.flagScore[n]
+                    score[n] += (self.flagScore[n] / 2.) # /2. makes flagScore 1/2 less important than geoScore
                 except KeyError, e:
                     logging.warning('Antenna ' + str(e) \
                         + ', is completely flagged and missing')
