@@ -659,14 +659,14 @@ def step_lowresclean():
  
 
 # steps to execute
-#step_env()
-#step_import()
+step_env()
+step_import()
 freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not commment this out!
-#step_preflag(active_ms, freq, n_chan)
-#step_setjy(active_ms)
-#step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
-#step_calib(active_ms, freq, minBL_for_cal)
-#step_selfcal(active_ms, freq, minBL_for_cal)
+step_preflag(active_ms, freq, n_chan)
+step_setjy(active_ms)
+step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
+step_calib(active_ms, freq, minBL_for_cal)
+step_selfcal(active_ms, freq, minBL_for_cal)
 step_peeling()
 step_subtract()
 step_lowresclean()
