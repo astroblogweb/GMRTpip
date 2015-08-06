@@ -133,7 +133,7 @@ def cleanmaskclean(parms, s):
     default('clean')
     clean(**parms)
    
-def clipresidual(active_ms, field='', scan=''):
+def clipresidual(active_ms, f='', s=''):
     """Create residuals in the CORRECTED_DATA (then unusable!)
     and clip at 5 times the total flux of the model
     NOTE: the ms CORRECTED_DATA will be corrupted!
@@ -143,7 +143,7 @@ def clipresidual(active_ms, field='', scan=''):
     uvsub(vis=active_ms)
 
     # flag statistics before flagging
-    statsFlag(active_ms, field=field, scan=scan, note='Before BL flag')
+    statsFlag(active_ms, field=f, scan=s, note='Before BL flag (on field: '+f+')')
 
     logging.debug("Removing baselines with high residuals:")
     import itertools
@@ -152,7 +152,7 @@ def clipresidual(active_ms, field='', scan=''):
     # datadesc ids are usually one per spw, but ms can also be splitted in corr
     for datadescid in metadata.datadescids():
         logging.debug("Working on datadesc: "+str(datadescid))
-        ms.msselect({'field':field, 'scan':scan})
+        ms.msselect({'field':f, 'scan':s})
         # TODO: ask for residual_amplitude and split this function?
         d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2','axis_info'], ifraxis=True)
         # cycle on corr
@@ -181,13 +181,15 @@ def clipresidual(active_ms, field='', scan=''):
     ms.close()
 
     # flag statistics before flagging
-    statsFlag(active_ms, field=field, scan=scan, note='Before tfcrop')
+    statsFlag(active_ms, field=f, scan=s, note='Before tfcrop (on field: '+f+')')
 
     default('flagdata')
-    flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=field, scan=scan)
+    flagdata(vis=active_ms, mode='tfcrop', datacolumn='corrected', action='apply', field=f, scan=s)
+
+    # TODO: create a BL cal table and propagate flag of that everywhere?
 
     # flag statistics after flagging
-    statsFlag(active_ms, field=field, scan=scan, note='After all clipping')
+    statsFlag(active_ms, field=f, scan=s, note='After all clipping (on field: '+f+')')
 
 
 def statsFlag(active_ms, field='', scan='', note=''):
