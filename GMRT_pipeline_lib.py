@@ -139,7 +139,7 @@ def cleanmaskclean(parms, s, makemask=True):
     default('clean')
     clean(**parms)
    
-def clipresidual(active_ms, field='', scan=''):
+def clipresidual(active_ms, f='', s=''):
     """Create residuals in the CORRECTED_DATA (then unusable!)
     and clip at 5 times the total flux of the model
     NOTE: the ms CORRECTED_DATA will be corrupted!
@@ -160,7 +160,7 @@ def clipresidual(active_ms, field='', scan=''):
     for datadescid in metadata.datadescids():
         flag[datadescid] = {}
         logging.debug("Working on datadesc: "+str(datadescid))
-        ms.msselect({'field':field, 'scan':scan})
+        ms.msselect({'field':f, 'scan':s})
         d = ms.getdata(['corrected_amplitude','flag','antenna1','antenna2','axis_info'], ifraxis=True)
         # cycle on corr
         for corr in xrange(len(d['corrected_amplitude'])):
