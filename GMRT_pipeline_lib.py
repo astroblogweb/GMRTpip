@@ -108,7 +108,7 @@ class Source(object):
         if 'expnoise' in data:
             self.expnoise = data['expnoise']
         else:
-            self.expnoise = 100.e-6
+            self.expnoise = 1.e-6
 
 def cleanmaskclean(parms, s, makemask=True):
     """
@@ -208,19 +208,19 @@ def clipresidual(active_ms, field='', scan=''):
 
 def statsFlag(active_ms, field='', scan='', note=''):
     default('flagdata')
-    t = flagdata(vis=active_ms, mode='summary', field=field, scan=scan, spwchan=False, spwcorr=False, basecnt=False, action='calculate', flagbackup=False, savepars=False, async=False)
+    t = flagdata(vis=active_ms, mode='summary', field=field, scan=scan, action='calculate')
     #clearstat()
     log = 'Flag statistics ('+note+'):'
     log += '\nAntenna, '
     for k in sorted(t['antenna']):
-        log += k +': %d.2%% - ' % (100.*t['antenna'][k]['flagged']/t['antenna'][k]['total'])
+        log += k +': %.2f%% - ' % (100.*t['antenna'][k]['flagged']/t['antenna'][k]['total'])
     log += '\nCorrelation, '
     for k, v in t['correlation'].items():
-        log += k +': %d.2%% - ' % (100.*v['flagged']/v['total'])
+        log += k +': %.2f%% - ' % (100.*v['flagged']/v['total'])
     log += '\nSpw, '
     for k, v in t['spw'].items():
-        log += k +': %d.2%% - ' % (100.*v['flagged']/v['total'])
-    log += '\nTotal: %d.2%%' % (100.*t['flagged']/t['total'])
+        log += k +': %.2f%% - ' % (100.*v['flagged']/v['total'])
+    log += '\nTotal: %.2f%%' % (100.*t['flagged']/t['total'])
     logging.debug(log.replace(' - \n','\n'))
 
 
@@ -732,15 +732,14 @@ def gmrt_flag(ms, flagfile):
                     + ' ~ ' + date2 + '/' + t1h + ':' + t1m + ':' + t1s
             logging.debug('Flagging antenna %s: timerange %s' % (ant, trange))
             default('flagdata')
-            flagdata(vis=ms, mode='manual', spw='', antenna=ant, timerange=trange, flagbackup=False, async=false)
+            flagdata(vis=ms, mode='manual', spw='', antenna=ant, timerange=trange, flagbackup=False)
     return True
-
 
 # From the EVLA pipeline
 # Class to determine the best reference antenna
 
 import numpy
-import casa
+#import casa
 
 
 # ------------------------------------------------------------------------------
@@ -1349,7 +1348,6 @@ class RefAntGeometry:
 # --------
 # The python dictionary containing the antenna distances from the array
 # reference, returned via the function value.
-
 # Modification history:
 # ---------------------
 # 2012 May 21 - Nick Elias, NRAO
@@ -1615,16 +1613,20 @@ class RefAntFlagging:
 
         # Create the local version of the flag tool and open the MS
 
-        fgLoc = casac.flagger()
+        fgLoc = casac.agentflagger()
         fgLoc.open(self.vis)
 
         # Get the flag statistics from the MS
 
-        fgLoc.setdata(field=self.field, spw=self.spw,
-                      intent=self.intent)
-        fgLoc.setflagsummary()
+        fgLoc.selectdata( field=self.field, spw=self.spw,
+                    intent=self.intent )
+        agents = {}
+        agents['mode'] = 'summary'
+        fgLoc.parseagentparameters(agents)
 
+        fgLoc.init()
         d = fgLoc.run()
+        fgLoc.done()
 
         # Delete the local version of the flag tool
 
@@ -1633,7 +1635,7 @@ class RefAntFlagging:
         # Calculate the number of good data for each antenna and return
         # them
 
-        antenna = d['antenna']
+        antenna = d['report0']['antenna']
         good = dict()
 
         for a in antenna.keys():

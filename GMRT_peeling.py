@@ -175,10 +175,10 @@ def peel(s, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanenv=True):
     # selfcal cycle 1
     logging.info("PEEL: First round of calibration...")
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Gp', solint='30s', refant=refAnt, minsnr=1, minblperant=4, calmode='p', uvrange='>50m')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Gp', solint='60s', refant=refAnt, minsnr=1, minblperant=4, calmode='p', uvrange='>50m')
     plotGainCal(sd+'cal/peel1.Gp', phase=True)
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Ga', solint='360s', refant=refAnt, minsnr=1, minblperant=4, calmode='a', uvrange='>50m')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel1.Ga', solint='300s', refant=refAnt, minsnr=1, minblperant=4, calmode='a', uvrange='>50m')
     plotGainCal(sd+'cal/peel1.Ga', amp=True)
     default('applycal')
     applycal(vis=active_ms, gaintable=[sd+'cal/peel1.Ga',sd+'cal/peel1.Gp'], calwt=False, flagbackup=False)
@@ -192,7 +192,7 @@ def peel(s, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanenv=True):
     # selfcal cycle 2
     logging.info("PEEL: Second round of calibration...")
     default('gaincal')
-    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Gp', solint='10s', refant=refAnt, minsnr=1, minblperant=4, calmode='p', uvrange='>50m')
+    gaincal(vis=active_ms, caltable=sd+'cal/peel2.Gp', solint='30s', refant=refAnt, minsnr=1, minblperant=4, calmode='p', uvrange='>50m')
     plotGainCal(sd+'cal/peel2.Gp', phase=True)
     default('gaincal')
     gaincal(vis=active_ms, caltable=sd+'cal/peel2.Ga', solint='120s', refant=refAnt, minsnr=1, minblperant=4, calmode='a', uvrange='>50m')
