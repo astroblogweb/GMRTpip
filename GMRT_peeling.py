@@ -225,7 +225,7 @@ def peel(s, modelimg, region, refAnt='', rob=0, wprojplanes=512, cleanenv=True):
     clean(vis=active_ms_reg, imagename='img/'+s.name+'/peel_'+region.split('/')[-1].replace('.crtf',''), gridmode='widefield', wprojplanes=wprojplanes, mode='mfs',\
         niter=5000, gain=0.1, psfmode='clark', imagermode='csclean', interactive=False, imsize=2000, cell='1arcsec',\
         stokes='I', nterms=2, weighting='briggs', robust=rob, usescratch=True, phasecenter=epoch+' '+directionRA+' '+directionDEC,\
-        mask='img/'+s.name+'/final-masked.mask')
+        mask=sorted(glob.glob('img/'+s.name+'/self*-masked.mask'))[-1])
 
     # invert calibration table
     logging.info("PEEL: Invert solution tables...")

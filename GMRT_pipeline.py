@@ -26,9 +26,9 @@
 #'A2589':{'flux_cal':['7',''],'gain_cal':['5',''],'target':['6','']}}
 # format: {antenna:time,antenna:time...} or {} for none
 #badranges = {'26':'2010/05/08/06:23:07~2010/05/08/06:31:15,2010/05/07/18:57:29~2010/05/07/18:58:21'}
-# resolution
+# resolution -> 610: 1arcsec, 1400: 0.5arcsec
 #sou_res = ['1arcsec']
-# size
+# size -> 610: 5k, 1400: 4k
 #sou_size = [5000]
 # robust
 #rob=0.5
@@ -37,7 +37,7 @@
 # pipeline dir
 #pipdir = '/home/stsf309/GMRTpipeline'
 
-import os, sys
+import os, sys, glob
 import itertools
 import datetime
 import numpy as np
@@ -302,7 +302,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
             gaintables.append('cal/flux_cal'+str(s.f)+'/'+step+'.Kcross')
             interp.append('nearest')
 
-            # find leakage
+            # find leakage - doable only with full stokes!
 #            logging.info("BP: Leakage calibration")
 #            default('polcal')
 #            polcal(vis=active_ms, caltable='cal/flux_cal'+str(s.f)+'/'+step+'.D', poltype = 'Df', preavg = 1., field=s.f, selectdata=True,\
@@ -338,7 +338,7 @@ def step_bandpass(active_ms, freq, n_chan, minBL_for_cal):
     # end of flux_cal cycles   
 
     # remove K, amp from gaintables, we keep B, Kcross and D which are global and T-indep
-    gaintables=['cal/flux_cal'+str(s.f)+'/final.B', 'cal/flux_cal'+str(s.f)+'/'+step+'.Kcross']
+    gaintables=['cal/flux_cal'+str(s.f)+'/final.B', 'cal/flux_cal'+str(s.f)+'/final.Kcross']
     interp=['nearest,nearestflag','nearest,nearestflag']
     
     statsFlag(active_ms, note='Before apply bandpass')
@@ -387,7 +387,7 @@ def step_calib(active_ms, freq, minBL_for_cal):
             refAntObj = RefAntHeuristics(vis=active_ms, field=s.f, geometry=True, flagging=True)
             refAnt = refAntObj.calculate()[0]
             
-            gaintables=['cal/flux_cal'+str(s.f)+'/final.B', 'cal/flux_cal'+str(s.f)+'/'+step+'.Kcross']
+            gaintables=['cal/flux_cal'+str(s.f)+'/final.B', 'cal/flux_cal'+str(s.f)+'/final.Kcross']
             interp=['nearest,nearestflag','nearest,nearestflag']
     
             # Gain cal phase
@@ -530,17 +530,57 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
         split(vis=active_ms, outputvis=s.ms,\
         	field=s.t, width=width, datacolumn='corrected', keepflags=False)
     
-        for cycle in xrange(5):
+        for cycle in xrange(6):
      
             logging.info("Start SELFCAL cycle: "+str(cycle))
-            ts = str(s.expnoise*10*(5-cycle))+' Jy' # expected noise this cycle
+            
+            # save flag for recovering
+            default('flagmanager')
+            flagmanager(vis=s.ms, mode='save', versionname='selfcal-c'+str(cycle))
 
+            ts = str(s.expnoise*10*(5-cycle))+' Jy' # expected noise this cycle
             parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/self'+str(cycle), 'gridmode':'widefield', 'wprojplanes':512,\
           	    'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
            	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask,\
                 'threshold':ts, 'multiscale':s.multiscale}
             cleanmaskclean(parms, s)
 
+            # Get img rms and if it higher apply old gaintables/flags and quit
+            rms = imstat(imagename='img/'+s.name+'/self'+str(cycle)+'-masked.image.tt0',mask='img/'+s.name+'/self'+str(cycle)+'\-masked.mask < 1')['rms'][0] # "<1" is to invert the mask
+            if cycle != 0 and old_rms * 1.1 < rms:
+                logging.warning('Image rms noise ('+str(rms)+' Jy/b) is higher than previous cycle ('+str(old_rms)+' Jy/b). Apply old cal tables and quitting selfcal.')
+
+                # rename last image so peeling doesn't use it
+                os.system('cd img/'+s.name+' && rename s/self'+str(cycle)+'/badimage/ *')
+
+                # get previous flags
+                default('flagmanager')
+                flagmanager(vis=s.ms, mode='restore', versionname='selfcal-c'+str(cycle-1))
+                
+                # for the first cycle just remove all calibration i.e. no selfcal
+                # for the others get the previous (i.e. cycle-2) cycle tables
+                if cycle == 1:
+                    default('clearcal')
+                    clearcal(vis=s.ms)
+                elif cycle < 4:
+                    plotGainCal('cal/'+s.name+'/self/gain'+str(cycle-2)+'.Gp', phase=True)
+                    default('applycal')
+                    applycal(vis=s.ms, gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=False)           
+                elif cycle >= 4: 
+                    plotGainCal('cal/'+s.name+'/self/gain'+str(cycle-2)+'.Gp', phase=True)
+                    plotGainCal('cal/'+s.name+'/self/gain'+str(cycle-2)+'.Ga', amp=True)
+                    default('applycal')
+                    applycal(vis=s.ms, gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=False)           
+
+                break
+
+            elif cycle != 0:
+                logging.info('Rms noise change: '+str(old_rms)+' Jy/b -> '+str(rms)+' Jy/b.')
+
+            if cycle == 5: break # don't do one more useless calibration
+
+            old_rms = rms
+ 
             # ft() model back - if clean doesn't converge clean() fail to put the model, better do it by hand
             default('ftw')
             ftw(vis=s.ms, model=['img/'+s.name+'/self'+str(cycle)+'-masked.model.tt0','img/'+s.name+'/self'+str(cycle)+'-masked.model.tt1'], \
@@ -551,15 +591,24 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             refAnt = refAntObj.calculate()[0]
 
             # Gaincal - phases
-            if cycle==0: solint='600s'
-            if cycle==1: solint='120s'
-            if cycle==2: solint='30s'
-            if cycle==3: solint='int'
-            if cycle==4: solint='int'
+            if cycle==0: 
+                solint='600s'
+                minsnr=4
+            if cycle==1: 
+                solint='120s'
+                minsnr=3
+            if cycle==2: 
+                solint='30s'
+                minsnr=3
+            if cycle==3:
+                solint='int'
+                minsnr=2
+            if cycle==4:
+                solint='int'
+                minsnr=2
+
             if freq < 400e6:
-                minsnr=2.0
-            else:
-                minsnr=3.0
+                minsnr -= 1.
 
             default('gaincal')
             gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.Gp', solint=solint, minsnr=minsnr,\
@@ -581,12 +630,14 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
             
             # Gaincal - amp
             if cycle >= 3:        
-                    if cycle==3: solint='600s'
-                    if cycle==4: solint='300s'
+                    if cycle==3: 
+                        solint='600s'
+                        minsnr = 4.
+                    if cycle==4: 
+                        solint='300s'
+                        minsnr = 3.
                     if freq < 400e6:
-                        minsnr=3.0
-                    else:
-                        minsnr=5.0
+                        minsnr -= 1.
                     default('gaincal')
                     gaincal(vis=s.ms, caltable='cal/'+s.name+'/self/gain'+str(cycle)+'.Ga',\
                     	selectdata=True, uvrange='>50m', solint=solint, minsnr=minsnr, refant=refAnt,\
@@ -610,18 +661,10 @@ def step_selfcal(active_ms, freq, minBL_for_cal):
 
             default('applycal')
             applycal(vis=s.ms, field = '', gaintable=gaintable, interp=['linear','linear'], calwt=False, flagbackup=False)           
-            statsFlag(active_ms, note='After apply selfcal (cycle: '+str(cycle)+')') 
+            statsFlag(s.ms, note='After apply selfcal (cycle: '+str(cycle)+')') 
 
         # end of selfcal loop
     
-        # Final cleaning
-        parms = {'vis':s.ms, 'imagename':'img/'+s.name+'/final', 'gridmode':'widefield', 'wprojplanes':512,\
-          	'mode':'mfs', 'nterms':2, 'niter':10000, 'gain':0.1, 'psfmode':'clark', 'imagermode':'csclean',\
-       	    'imsize':sou_size, 'cell':sou_res, 'weighting':'briggs', 'robust':rob, 'usescratch':True, 'mask':s.mask,\
-            'threshold':ts, 'multiscale':s.multiscale}
-
-        cleanmaskclean(parms, s)
-       
     # end of cycle on sources
   
     
@@ -635,7 +678,7 @@ def step_peeling():
         check_rm('img/'+s.name+'/peel*')
         check_rm('peel')
         os.makedirs('peel')
-        modelforpeel = ['img/'+s.name+'/final-masked.model.tt0','img/'+s.name+'/final-masked.model.tt1']
+        modelforpeel = [sorted(glob.glob('img/'+s.name+'/self*-masked.model.tt0'))[-1], sorted(glob.glob('img/'+s.name+'/self*-masked.model.tt1'))[-1]]
         refAntObj = RefAntHeuristics(vis=s.ms, field='0', geometry=True, flagging=True)
         refAnt = refAntObj.calculate()[0]
 
@@ -694,13 +737,13 @@ def step_lowresclean():
  
 
 # steps to execute
-step_env()
-step_import()
+#step_env()
+#step_import()
 freq, minBL_for_cal, sources, n_chan = step_setvars(active_ms) # NOTE: do not commment this out!
-step_preflag(active_ms, freq, n_chan)
-step_setjy(active_ms)
-step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
-step_calib(active_ms, freq, minBL_for_cal)
+#step_preflag(active_ms, freq, n_chan)
+#step_setjy(active_ms)
+#step_bandpass(active_ms, freq, n_chan, minBL_for_cal)
+#step_calib(active_ms, freq, minBL_for_cal)
 step_selfcal(active_ms, freq, minBL_for_cal)
 step_peeling()
 #step_subtract()
